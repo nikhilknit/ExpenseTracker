@@ -1,8 +1,34 @@
 import sqlite3
 import os
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple, Any
+
+def normalize_date_str(date_input: Optional[str]) -> str:
+    """Safely normalizes any date input into ISO YYYY-MM-DD format."""
+    if not date_input or not str(date_input).strip():
+        return datetime.now().strftime("%Y-%m-%d")
+    s = str(date_input).strip()
+    if s.lower() in ("today", "tod"):
+        return datetime.now().strftime("%Y-%m-%d")
+    if s.lower() in ("yesterday", "yest"):
+        return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    
+    formats = [
+        "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d",
+        "%d-%m-%y", "%d/%m/%y", "%d %b %Y", "%d %b %y",
+        "%d %B %Y", "%Y-%m-%d %H:%M:%S", "%d-%m-%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M:%S"
+    ]
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(s[:19], fmt)
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    if len(s) >= 10 and s[4] == '-' and s[7] == '-':
+        return s[:10]
+    return datetime.now().strftime("%Y-%m-%d")
 
 def get_database_path() -> str:
     """Returns safe writable database file path for Android or Desktop."""
@@ -447,6 +473,127 @@ class DatabaseManager:
                 "payment_modes": mode_breakdown
             }
 
+    def get_all_available_months(self) -> List[Dict[str, str]]:
+        """
+        Returns list of all months with data in the database, ordered latest first.
+        e.g. [{'month_year': '2026-11', 'display_name': 'November 2026'}, ...]
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT strftime('%Y-%m', date) as my
+                FROM transactions
+                WHERE date IS NOT NULL AND length(date) >= 7
+                ORDER BY my DESC
+            """)
+            rows = cursor.fetchall()
+            months_set = {r['my'] for r in rows if r['my']}
+
+            cursor.execute("""
+                SELECT DISTINCT strftime('%Y-%m', date) as my
+                FROM milk_deliveries
+                WHERE date IS NOT NULL AND length(date) >= 7
+            """)
+            for r in cursor.fetchall():
+                if r['my']:
+                    months_set.add(r['my'])
+
+            curr_my = datetime.now().strftime("%Y-%m")
+            months_set.add(curr_my)
+
+            sorted_my = sorted(list(months_set), reverse=True)
+            result = []
+            for my in sorted_my:
+                try:
+                    dt = datetime.strptime(my, "%Y-%m")
+                    display = dt.strftime("%B %Y")
+                except Exception:
+                    display = my
+                result.append({"month_year": my, "display_name": display})
+            return result
+
+    def get_monthly_history_breakdown(self, limit_months: int = 24) -> List[Dict[str, Any]]:
+        """
+        Calculates per-month financial summaries across all months in the past 1-2 years.
+        Returns detailed summary per month including total debit, credit, net savings,
+        transaction count, top spending category, milk cost, and staff payments.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    strftime('%Y-%m', date) as month_year,
+                    SUM(CASE WHEN type = 'DEBIT' THEN amount ELSE 0 END) as total_debit,
+                    SUM(CASE WHEN type = 'CREDIT' THEN amount ELSE 0 END) as total_credit,
+                    COUNT(*) as txn_count
+                FROM transactions
+                WHERE date IS NOT NULL AND length(date) >= 7
+                GROUP BY strftime('%Y-%m', date)
+                ORDER BY month_year DESC
+                LIMIT ?
+            """, (limit_months,))
+            rows = cursor.fetchall()
+            months = [dict(r) for r in rows if r['month_year']]
+
+            curr_my = datetime.now().strftime("%Y-%m")
+            if not any(m['month_year'] == curr_my for m in months):
+                months.insert(0, {
+                    "month_year": curr_my,
+                    "total_debit": 0.0,
+                    "total_credit": 0.0,
+                    "txn_count": 0
+                })
+
+            for m in months:
+                my = m['month_year']
+                try:
+                    dt = datetime.strptime(my, "%Y-%m")
+                    m['display_name'] = dt.strftime("%B %Y")
+                    m['month_display'] = dt.strftime("%B %Y")
+                    m['short_name'] = dt.strftime("%b %y")
+                except Exception:
+                    m['display_name'] = my
+                    m['month_display'] = my
+                    m['short_name'] = my
+
+                m['total_debit'] = round(m.get('total_debit') or 0.0, 2)
+                m['total_credit'] = round(m.get('total_credit') or 0.0, 2)
+                m['net_savings'] = round(m['total_credit'] - m['total_debit'], 2)
+
+                # Top spending category
+                cursor.execute("""
+                    SELECT category, SUM(amount) as cat_total
+                    FROM transactions
+                    WHERE type = 'DEBIT' AND strftime('%Y-%m', date) = ?
+                    GROUP BY category
+                    ORDER BY cat_total DESC LIMIT 1
+                """, (my,))
+                top_cat = cursor.fetchone()
+                if top_cat:
+                    m['top_category'] = top_cat['category']
+                    m['top_category_amount'] = round(top_cat['cat_total'] or 0.0, 2)
+                else:
+                    m['top_category'] = "No Spends"
+                    m['top_category_amount'] = 0.0
+
+                # Milk delivery total
+                cursor.execute("""
+                    SELECT COALESCE(SUM(quantity_liters * rate_at_delivery), 0.0) as milk_total
+                    FROM milk_deliveries
+                    WHERE strftime('%Y-%m', date) = ?
+                """, (my,))
+                m['milk_total'] = round(cursor.fetchone()['milk_total'] or 0.0, 2)
+
+                # Staff total
+                cursor.execute("""
+                    SELECT COALESCE(SUM(amount), 0.0) as staff_total
+                    FROM staff_payments
+                    WHERE month_for = ?
+                """, (my,))
+                m['staff_total'] = round(cursor.fetchone()['staff_total'] or 0.0, 2)
+
+            return months
+
     def set_budget(self, month_year: str, amount: float):
         """Set or update budget for a specific month (YYYY-MM)."""
         with self._get_connection() as conn:
@@ -752,9 +899,8 @@ class DatabaseManager:
         shift: str = "Daily",
         notes: str = ""
     ) -> int:
-        """Log daily milk delivery for Sundar or Jain Mandir."""
-        if not date:
-            date = datetime.now().strftime("%Y-%m-%d")
+        """Log daily milk delivery for Sundar or Jain Mandir with safe date normalization."""
+        date = normalize_date_str(date)
 
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -774,6 +920,51 @@ class DatabaseManager:
             """, (vendor_id, date, quantity_liters, rate, shift, notes))
             conn.commit()
             return cursor.lastrowid
+
+    def log_milk_delivery_range(
+        self,
+        vendor_id: int,
+        from_date: str,
+        to_date: str,
+        quantity_per_day: float,
+        shift: str = "Daily",
+        notes: str = ""
+    ) -> int:
+        """
+        Logs milk delivery for a range of dates [from_date, to_date] inclusive.
+        e.g. from 2026-11-01 to 2026-11-10 at 1.5L/day.
+        Returns total number of days successfully logged.
+        """
+        d_start_str = normalize_date_str(from_date)
+        d_end_str = normalize_date_str(to_date)
+
+        dt_start = datetime.strptime(d_start_str, "%Y-%m-%d")
+        dt_end = datetime.strptime(d_end_str, "%Y-%m-%d")
+        if dt_start > dt_end:
+            dt_start, dt_end = dt_end, dt_start
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT rate_per_liter FROM milk_vendors WHERE id = ?", (vendor_id,))
+            vendor = cursor.fetchone()
+            rate = vendor['rate_per_liter'] if vendor else 60.0
+
+            curr = dt_start
+            count = 0
+            while curr <= dt_end:
+                day_str = curr.strftime("%Y-%m-%d")
+                cursor.execute("""
+                    INSERT INTO milk_deliveries (vendor_id, date, quantity_liters, rate_at_delivery, shift, notes)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(vendor_id, date, shift) DO UPDATE SET
+                        quantity_liters = excluded.quantity_liters,
+                        rate_at_delivery = excluded.rate_at_delivery,
+                        notes = excluded.notes
+                """, (vendor_id, day_str, quantity_per_day, rate, shift, notes))
+                curr += timedelta(days=1)
+                count += 1
+            conn.commit()
+            return count
 
     def log_milk_payment(
         self,
@@ -880,19 +1071,26 @@ class DatabaseManager:
 
             return summaries
 
-    def get_milk_deliveries(self, vendor_id: int, month_year: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Fetch daily deliveries for a milkman in a month."""
-        if not month_year:
-            month_year = datetime.now().strftime("%Y-%m")
+    def get_milk_deliveries(self, vendor_id: Optional[int] = None, month_year: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """Fetch deliveries for milkmen (optionally filtered by vendor or month, ordered latest first)."""
+        query = """
+            SELECT d.*, v.name as vendor_name 
+            FROM milk_deliveries d
+            LEFT JOIN milk_vendors v ON d.vendor_id = v.id
+            WHERE 1=1
+        """
+        params = []
+        if vendor_id:
+            query += " AND d.vendor_id = ?"
+            params.append(vendor_id)
+        if month_year and month_year != "all":
+            query += " AND strftime('%Y-%m', d.date) = ?"
+            params.append(month_year)
+        query += " ORDER BY d.date DESC, d.id DESC LIMIT ?"
+        params.append(limit)
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT d.*, v.name as vendor_name 
-                FROM milk_deliveries d
-                LEFT JOIN milk_vendors v ON d.vendor_id = v.id
-                WHERE d.vendor_id = ? AND strftime('%Y-%m', d.date) = ?
-                ORDER BY d.date DESC
-            """, (vendor_id, month_year))
+            cursor.execute(query, params)
             return [dict(r) for r in cursor.fetchall()]
 
     def get_milk_payment_history(self, vendor_id: Optional[int] = None, limit: int = 50) -> List[Dict[str, Any]]:

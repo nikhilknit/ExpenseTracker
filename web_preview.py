@@ -61,10 +61,25 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   <main class="max-w-md mx-auto px-4 pt-3 space-y-4">
 
+    <!-- Month Navigation Bar -->
+    <div class="bg-white rounded-2xl p-2.5 shadow-sm border border-slate-200 flex items-center justify-between">
+      <button onclick="prevMonth()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 flex items-center justify-center transition" title="Previous Month">
+        <i class="fa-solid fa-chevron-left text-xs"></i>
+      </button>
+      <div class="flex items-center space-x-1.5 cursor-pointer px-3 py-1 rounded-xl hover:bg-slate-50 transition" onclick="openMonthPickerModal()">
+        <i class="fa-solid fa-calendar-days text-indigo-600 text-xs"></i>
+        <span class="text-sm font-bold text-slate-800" id="current-month-label">November 2026</span>
+        <i class="fa-solid fa-caret-down text-slate-400 text-xs"></i>
+      </div>
+      <button onclick="nextMonth()" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-600 flex items-center justify-center transition" title="Next Month">
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+      </button>
+    </div>
+
     <!-- Total Spend Hero Card -->
     <div class="bg-gradient-to-br from-indigo-600 to-violet-700 text-white rounded-2xl p-5 shadow-lg relative overflow-hidden">
       <div class="relative z-10">
-        <div class="text-xs uppercase tracking-wider text-indigo-200 font-medium">Spent This Month</div>
+        <div class="text-xs uppercase tracking-wider text-indigo-200 font-medium" id="lbl-spend-title">Spent This Month</div>
         <div class="text-3xl font-extrabold mt-1 tracking-tight" id="lbl-total">₹ 0.00</div>
         
         <div class="mt-4 pt-3 border-t border-indigo-400/30 flex justify-between text-xs text-indigo-100">
@@ -214,9 +229,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
         <div class="flex justify-between items-center mb-3">
           <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Daily Milk Delivery Logs</h3>
-          <select id="sel-milk-history-vendor" onchange="loadMilkDeliveries()" class="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white">
-            <!-- Options populated dynamically -->
-          </select>
+          <div class="flex items-center space-x-1.5">
+            <button onclick="openMilkRangeModal()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg flex items-center space-x-1 shadow transition">
+              <i class="fa-solid fa-calendar-days text-[10px]"></i>
+              <span>+ Date Range</span>
+            </button>
+            <select id="sel-milk-history-vendor" onchange="loadMilkDeliveries()" class="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white">
+              <!-- Options populated dynamically -->
+            </select>
+          </div>
         </div>
         <div id="milk-daily-list" class="space-y-2 text-xs max-h-60 overflow-y-auto">
           <!-- Rendered via JS -->
@@ -226,6 +247,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <!-- ==================== VIEW 4: ANALYTICS ==================== -->
     <div id="view-analytics" class="hidden space-y-4">
+      <!-- 1-Year Monthly History Section -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <h3 class="text-sm font-bold text-slate-800 mb-2 flex items-center space-x-2">
+          <i class="fa-solid fa-calendar-check text-indigo-600"></i>
+          <span>1-Year Monthly Spending Summary</span>
+        </h3>
+        <p class="text-[11px] text-slate-500 mb-3">Comprehensive month-by-month spending, savings, top category, and milk expenses. Tap any month to view details.</p>
+        <div id="monthly-history-list" class="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+
       <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
         <h3 class="text-sm font-bold text-slate-800 mb-3 flex items-center space-x-2">
           <i class="fa-solid fa-chart-pie text-indigo-500"></i>
@@ -430,6 +463,66 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </div>
   </div>
 
+  <!-- Modal: Log Milk Delivery Date Range -->
+  <div id="milk-range-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-3.5 shadow-2xl">
+      <div class="flex justify-between items-center pb-2 border-b">
+        <div>
+          <h2 class="text-base font-bold text-slate-800">Log Milk for Date Range</h2>
+          <p class="text-[11px] text-slate-500">Log multiple days of deliveries in 1 click</p>
+        </div>
+        <button onclick="closeMilkRangeModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <div>
+        <label class="text-xs font-medium text-slate-600">Milk Vendor *</label>
+        <select id="range-milk-vendor" onchange="onRangeVendorChanged()" class="w-full text-xs font-semibold p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white mt-1">
+          <!-- Populated from vendors -->
+        </select>
+      </div>
+
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quick Presets</label>
+        </div>
+        <div class="grid grid-cols-3 gap-1.5">
+          <button type="button" onclick="setRangePreset('last7')" class="px-2 py-1.5 bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-800 text-[11px] rounded-lg font-semibold transition text-center">Last 7 Days</button>
+          <button type="button" onclick="setRangePreset('last15')" class="px-2 py-1.5 bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-800 text-[11px] rounded-lg font-semibold transition text-center">Last 15 Days</button>
+          <button type="button" onclick="setRangePreset('month')" class="px-2 py-1.5 bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-800 text-[11px] rounded-lg font-semibold transition text-center">Month So Far</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="text-xs font-medium text-slate-600">From Date *</label>
+          <input type="date" id="range-from-date" onchange="updateRangeCalc()" class="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none mt-1">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-slate-600">To Date *</label>
+          <input type="date" id="range-to-date" onchange="updateRangeCalc()" class="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none mt-1">
+        </div>
+      </div>
+
+      <div>
+        <label class="text-xs font-medium text-slate-600">Quantity Per Day (Liters) *</label>
+        <input type="number" step="0.25" id="range-daily-qty" oninput="updateRangeCalc()" class="w-full text-lg font-bold p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none mt-1">
+      </div>
+
+      <div>
+        <label class="text-xs font-medium text-slate-600">Notes (Optional)</label>
+        <input type="text" id="range-notes" placeholder="e.g. Daily morning delivery" class="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none mt-1">
+      </div>
+
+      <div id="range-calc-box" class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 font-medium">
+        Calculating...
+      </div>
+
+      <button onclick="submitMilkRangeDelivery()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 rounded-xl shadow transition">
+        Save Range Deliveries
+      </button>
+    </div>
+  </div>
+
   <!-- Modal: Pay Milkman -->
   <div id="milk-pay-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
     <div class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
@@ -483,6 +576,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <button onclick="saveBudget()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-xl transition">
         Update Budget
       </button>
+    </div>
+  </div>
+
+  <!-- Modal: Month Picker Modal -->
+  <div id="month-picker-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center pb-2 border-b">
+        <div>
+          <h2 class="text-base font-bold text-slate-800">Select Month</h2>
+          <p class="text-xs text-slate-500">View transactions and household dues for any month</p>
+        </div>
+        <button onclick="closeMonthPickerModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <div id="month-picker-list" class="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+        <!-- Rendered via JS -->
+      </div>
     </div>
   </div>
 
@@ -655,9 +764,99 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       if (view === 'analytics') loadAnalytics();
     }
 
+    // ----------------- MONTH SWITCHING & NAVIGATION -----------------
+    let currentSelectedMonth = new Date().toISOString().slice(0, 7);
+
+    function formatMonthDisplay(monthStr) {
+      if (!monthStr) return '';
+      const parts = monthStr.split('-');
+      const year = parseInt(parts[0]);
+      const month = parseInt(parts[1]);
+      const d = new Date(year, month - 1, 1);
+      return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
+
+    function updateMonthDisplay() {
+      const lbl = document.getElementById('current-month-label');
+      if (lbl) lbl.textContent = formatMonthDisplay(currentSelectedMonth);
+
+      const title = document.getElementById('lbl-spend-title');
+      const nowMonth = new Date().toISOString().slice(0, 7);
+      if (title) {
+        title.textContent = (currentSelectedMonth === nowMonth) ? "Spent This Month" : `Spent in ${formatMonthDisplay(currentSelectedMonth)}`;
+      }
+    }
+
+    function prevMonth() {
+      const parts = currentSelectedMonth.split('-').map(Number);
+      const prevDate = new Date(parts[0], parts[1] - 2, 1);
+      const y = prevDate.getFullYear();
+      const m = String(prevDate.getMonth() + 1).padStart(2, '0');
+      currentSelectedMonth = `${y}-${m}`;
+      onActiveMonthChanged();
+    }
+
+    function nextMonth() {
+      const parts = currentSelectedMonth.split('-').map(Number);
+      const nextDate = new Date(parts[0], parts[1], 1);
+      const y = nextDate.getFullYear();
+      const m = String(nextDate.getMonth() + 1).padStart(2, '0');
+      currentSelectedMonth = `${y}-${m}`;
+      onActiveMonthChanged();
+    }
+
+    function setActiveMonth(mStr) {
+      currentSelectedMonth = mStr;
+      closeMonthPickerModal();
+      onActiveMonthChanged();
+    }
+
+    function onActiveMonthChanged() {
+      updateMonthDisplay();
+      loadStats();
+      loadTransactions();
+      loadStaffData();
+      loadMilkData();
+      loadAnalytics();
+    }
+
+    async function openMonthPickerModal() {
+      const res = await fetch('/api/monthly-history');
+      const list = await res.json();
+      const container = document.getElementById('month-picker-list');
+      const nowMonth = new Date().toISOString().slice(0, 7);
+
+      if (!list.find(x => x.month_year === nowMonth)) {
+        list.unshift({month_year: nowMonth, month_display: formatMonthDisplay(nowMonth), total_debit: 0});
+      }
+
+      container.innerHTML = list.map(item => {
+        const isSel = (item.month_year === currentSelectedMonth);
+        return `
+          <button onclick="setActiveMonth('${item.month_year}')" class="w-full text-left p-3 rounded-xl border ${isSel ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-bold' : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'} flex items-center justify-between transition">
+            <div class="flex items-center space-x-2">
+              <i class="fa-solid fa-calendar text-xs ${isSel ? 'text-indigo-600' : 'text-slate-400'}"></i>
+              <span class="text-xs">${item.month_display}</span>
+              ${isSel ? '<span class="text-[10px] bg-indigo-600 text-white px-1.5 py-0.2 rounded font-semibold">Active</span>' : ''}
+            </div>
+            <div class="text-xs font-bold ${item.total_debit > 0 ? 'text-slate-800' : 'text-slate-400'}">
+              ₹${item.total_debit.toLocaleString('en-IN', {maximumFractionDigits: 0})}
+            </div>
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('month-picker-modal').classList.remove('hidden');
+    }
+
+    function closeMonthPickerModal() {
+      document.getElementById('month-picker-modal').classList.add('hidden');
+    }
+
     // ----------------- EXPENSES & STATS -----------------
     async function loadStats() {
-      const res = await fetch('/api/stats');
+      updateMonthDisplay();
+      const res = await fetch(`/api/stats?month=${encodeURIComponent(currentSelectedMonth)}`);
       const data = await res.json();
       
       document.getElementById('lbl-total').textContent = `₹ ${data.total_debit.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
@@ -774,7 +973,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     // ----------------- COOK & HOUSE HELPER -----------------
     async function loadStaffData() {
-      const res = await fetch('/api/staff/summary');
+      const res = await fetch(`/api/staff/summary?month=${encodeURIComponent(currentSelectedMonth)}`);
       const staffList = await res.json();
       const container = document.getElementById('staff-cards');
 
@@ -955,13 +1154,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     let cachedVendors = [];
 
     async function loadMilkData() {
-      const res = await fetch('/api/milk/summary');
+      const res = await fetch(`/api/milk/summary?month=${encodeURIComponent(currentSelectedMonth)}`);
       cachedVendors = await res.json();
       const container = document.getElementById('milk-vendors-container');
       const monthLabel = document.getElementById('lbl-milk-month');
 
-      if (cachedVendors.length > 0) {
-        monthLabel.textContent = cachedVendors[0].month_year;
+      if (monthLabel) {
+        monthLabel.textContent = formatMonthDisplay(currentSelectedMonth);
       }
 
       const totalMilkDue = cachedVendors.reduce((acc, v) => acc + (v.balance_due || 0), 0);
@@ -1025,7 +1224,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               <button onclick="quickLogMilk(${v.vendor_id}, ${v.default_quantity}, 'yesterday')" class="flex-1 bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-semibold py-2 rounded-xl transition shadow">
                 +${v.default_quantity}L Yest
               </button>
-              <button onclick="openMilkDeliveryModal(${v.vendor_id}, '${v.name}')" class="px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold py-2 rounded-xl transition" title="Log Custom Liters or Date">
+              <button onclick="openMilkRangeModal(${v.vendor_id})" class="px-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-[11px] font-semibold py-2 rounded-xl transition" title="Log Date Range (e.g. 1st to 10th)">
+                <i class="fa-solid fa-calendar-range"></i>
+              </button>
+              <button onclick="openMilkDeliveryModal(${v.vendor_id}, '${v.name}')" class="px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold py-2 rounded-xl transition" title="Log Custom Liters or Single Date">
                 <i class="fa-solid fa-calendar-day"></i>
               </button>
               <button onclick="openMilkPayModal(${v.vendor_id}, '${v.name}', ${v.balance_due})" class="px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold py-2 rounded-xl transition shadow">
@@ -1198,9 +1400,146 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       loadMilkData();
     }
 
-    // ----------------- ANALYTICS -----------------
+    // ----------------- MILK DATE RANGE LOGGING -----------------
+    function openMilkRangeModal(vendorId) {
+      const sel = document.getElementById('range-milk-vendor');
+      sel.innerHTML = cachedVendors.map(v => 
+        `<option value="${v.vendor_id}" data-rate="${v.rate_per_liter}" data-qty="${v.default_quantity}" ${vendorId && v.vendor_id === vendorId ? 'selected' : ''}>${v.name} (₹${v.rate_per_liter}/L)</option>`
+      ).join('');
+
+      setRangePreset('last7');
+      onRangeVendorChanged();
+      document.getElementById('milk-range-modal').classList.remove('hidden');
+    }
+
+    function closeMilkRangeModal() {
+      document.getElementById('milk-range-modal').classList.add('hidden');
+    }
+
+    function onRangeVendorChanged() {
+      const sel = document.getElementById('range-milk-vendor');
+      const opt = sel.options[sel.selectedIndex];
+      if (opt) {
+        document.getElementById('range-daily-qty').value = opt.getAttribute('data-qty') || '1.0';
+      }
+      updateRangeCalc();
+    }
+
+    function setRangePreset(preset) {
+      const today = new Date();
+      const todayStr = today.toISOString().slice(0, 10);
+      document.getElementById('range-to-date').value = todayStr;
+
+      let fromDate = new Date();
+      if (preset === 'last7') {
+        fromDate.setDate(today.getDate() - 6);
+      } else if (preset === 'last15') {
+        fromDate.setDate(today.getDate() - 14);
+      } else if (preset === 'month') {
+        fromDate.setDate(1);
+      }
+      document.getElementById('range-from-date').value = fromDate.toISOString().slice(0, 10);
+      updateRangeCalc();
+    }
+
+    function updateRangeCalc() {
+      const f = document.getElementById('range-from-date').value;
+      const t = document.getElementById('range-to-date').value;
+      const q = parseFloat(document.getElementById('range-daily-qty').value) || 0;
+      const box = document.getElementById('range-calc-box');
+
+      if (!f || !t || q <= 0) {
+        box.textContent = "Select valid dates and daily liters";
+        box.className = "p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500 font-medium";
+        return;
+      }
+
+      const d1 = new Date(f);
+      const d2 = new Date(t);
+      const diffTime = d2 - d1;
+      const days = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+      if (days <= 0) {
+        box.textContent = "From Date must be before or equal to To Date";
+        box.className = "p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium";
+        return;
+      }
+
+      const sel = document.getElementById('range-milk-vendor');
+      const opt = sel ? sel.options[sel.selectedIndex] : null;
+      const rate = opt ? parseFloat(opt.getAttribute('data-rate') || 60) : 60;
+      const totLiters = days * q;
+      const totCost = totLiters * rate;
+
+      box.className = "p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 font-medium";
+      box.innerHTML = `<strong>Summary:</strong> ${days} days × ${q}L = <strong>${totLiters.toFixed(1)} Liters</strong> (₹${totCost.toLocaleString('en-IN', {maximumFractionDigits: 0})})`;
+    }
+
+    async function submitMilkRangeDelivery() {
+      const vendor_id = parseInt(document.getElementById('range-milk-vendor').value);
+      const from_date = document.getElementById('range-from-date').value;
+      const to_date = document.getElementById('range-to-date').value;
+      const quantity_per_day = parseFloat(document.getElementById('range-daily-qty').value);
+      const notes = document.getElementById('range-notes').value.trim();
+
+      if (!from_date || !to_date || !quantity_per_day || quantity_per_day <= 0) {
+        alert("Please enter valid dates and daily quantity!");
+        return;
+      }
+
+      const res = await fetch('/api/milk/delivery-range', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({vendor_id, from_date, to_date, quantity_per_day, notes})
+      });
+      const data = await res.json();
+
+      closeMilkRangeModal();
+      showToast(`Logged ${data.count} days of milk deliveries (${data.total_liters}L)!`);
+      loadMilkData();
+      loadStats();
+    }
+
+    // ----------------- ANALYTICS & 1-YEAR MONTHLY HISTORY -----------------
+    async function loadMonthlyHistory() {
+      const res = await fetch('/api/monthly-history');
+      const list = await res.json();
+      const container = document.getElementById('monthly-history-list');
+      if (!container) return;
+
+      if (!list.length) {
+        container.innerHTML = '<div class="text-xs text-slate-400 py-3 text-center">No past transactions found. Run Scan SMS or add spends!</div>';
+        return;
+      }
+
+      container.innerHTML = list.map(item => {
+        const isCurrent = (item.month_year === currentSelectedMonth);
+        return `
+          <div onclick="setActiveMonth('${item.month_year}'); switchView('recent');" class="p-3 rounded-xl border ${isCurrent ? 'bg-indigo-50/70 border-indigo-300 shadow-sm' : 'bg-slate-50 hover:bg-slate-100 border-slate-100'} transition cursor-pointer space-y-1.5">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-calendar-check text-xs ${isCurrent ? 'text-indigo-600' : 'text-slate-400'}"></i>
+                <span class="text-xs font-bold text-slate-800">${item.month_display}</span>
+                ${isCurrent ? '<span class="text-[10px] bg-indigo-600 text-white px-1.5 py-0.2 rounded font-semibold">Viewing</span>' : ''}
+              </div>
+              <div class="text-xs font-extrabold text-slate-800">
+                ₹${item.total_debit.toLocaleString('en-IN', {minimumFractionDigits: 2})}
+              </div>
+            </div>
+            <div class="grid grid-cols-4 gap-1 text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
+              <div>Txns: <strong class="text-slate-700">${item.transaction_count}</strong></div>
+              <div>Top: <strong class="text-slate-700 truncate">${item.top_category || 'General'}</strong></div>
+              <div>Milk: <strong class="text-amber-700">₹${(item.milk_total || 0).toFixed(0)}</strong></div>
+              <div>Staff: <strong class="text-blue-700">₹${(item.staff_total || 0).toFixed(0)}</strong></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
     async function loadAnalytics() {
-      const res = await fetch('/api/stats');
+      loadMonthlyHistory();
+      const res = await fetch(`/api/stats?month=${encodeURIComponent(currentSelectedMonth)}`);
       const data = await res.json();
       const total = data.total_debit || 1;
 
@@ -1486,13 +1825,18 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(HTML_TEMPLATE.encode('utf-8'))
         elif path == "/api/stats":
-            stats = db.get_summary_statistics()
-            milk_sums = db.get_milk_monthly_summary()
-            staff_sums = db.get_staff_monthly_summary()
+            m = query.get('month', [None])[0]
+            stats = db.get_summary_statistics(month_year=m)
+            milk_sums = db.get_milk_monthly_summary(month_year=m)
+            staff_sums = db.get_staff_monthly_summary(month_year=m)
             stats["total_milk_due"] = sum(v.get("balance_due", 0.0) for v in milk_sums)
             stats["total_staff_due"] = sum(s.get("balance_due", 0.0) for s in staff_sums)
             stats["total_household_due"] = stats["total_milk_due"] + stats["total_staff_due"]
             self._send_json(stats)
+        elif path == "/api/monthly-history":
+            self._send_json(db.get_monthly_history_breakdown(limit_months=24))
+        elif path == "/api/available-months":
+            self._send_json(db.get_all_available_months())
         elif path == "/api/transactions":
             q = query.get('q', [''])[0]
             cat = query.get('category', ['All'])[0]
@@ -1632,6 +1976,22 @@ class RequestHandler(BaseHTTPRequestHandler):
                 notes=data.get("notes", "")
             )
             self._send_json({"success": True, "id": del_id})
+        elif path == "/api/milk/delivery-range":
+            vid = int(data.get("vendor_id", 1))
+            from_d = data.get("from_date")
+            to_d = data.get("to_date")
+            qty = float(data.get("quantity_per_day", 1.0))
+            shift = data.get("shift", "Daily")
+            notes = data.get("notes", "")
+            res = db.log_milk_delivery_range(
+                vendor_id=vid,
+                from_date=from_d,
+                to_date=to_d,
+                quantity_per_day=qty,
+                shift=shift,
+                notes=notes
+            )
+            self._send_json(res)
         elif path == "/api/milk/pay":
             pay_id = db.log_milk_payment(
                 vendor_id=int(data.get("vendor_id", 1)),

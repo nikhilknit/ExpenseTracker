@@ -51,6 +51,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.staff_dialog = None
         self.milk_dialog = None
         self.filter_category = "All"
+        self.selected_month = datetime.now().strftime("%Y-%m")
         try:
             self.db = DatabaseManager()
             self.sms_service = SMSService(self.db)
@@ -120,19 +121,126 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             # Safe sync on main thread via Clock
             Clock.schedule_once(lambda dt: self.sync_sms(full_scan=False), 0.8)
 
-    def update_dashboard_summary(self):
-        """Updates only the numeric dashboard spend cards & budget without recreating widgets (<5ms)."""
+    def get_month_display_name(self, month_year: str) -> str:
+        try:
+            dt = datetime.strptime(month_year, "%Y-%m")
+            return dt.strftime("%B %Y")
+        except Exception:
+            return month_year
+
+    def prev_month(self):
+        try:
+            dt = datetime.strptime(self.selected_month, "%Y-%m")
+            prev_dt = dt.replace(day=1) - timedelta(days=1)
+            self.set_active_month(prev_dt.strftime("%Y-%m"))
+        except Exception as e:
+            print("Error in prev_month:", e)
+
+    def next_month(self):
+        try:
+            dt = datetime.strptime(self.selected_month, "%Y-%m")
+            next_dt = (dt.replace(day=28) + timedelta(days=4)).replace(day=1)
+            self.set_active_month(next_dt.strftime("%Y-%m"))
+        except Exception as e:
+            print("Error in next_month:", e)
+
+    def set_active_month(self, month_year: str):
+        self.selected_month = month_year
+        display_name = self.get_month_display_name(month_year)
+        if hasattr(self, 'root') and self.root and hasattr(self.root, 'ids'):
+            ids = self.root.ids
+            if 'lbl_selected_month_dash' in ids:
+                ids.lbl_selected_month_dash.text = display_name
+            if 'lbl_selected_month_milk' in ids:
+                ids.lbl_selected_month_milk.text = display_name
+            if 'lbl_spend_period_title' in ids:
+                curr_month = datetime.now().strftime("%Y-%m")
+                if month_year == curr_month:
+                    ids.lbl_spend_period_title.text = "Total Spent This Month"
+                else:
+                    ids.lbl_spend_period_title.text = f"Total Spent in {display_name}"
+
+        self.update_dashboard_summary(month_year=self.selected_month)
+        self.populate_milk_cards(month_year=self.selected_month)
+        self.populate_staff_cards(month_year=self.selected_month)
+        if hasattr(self, 'root') and self.root and hasattr(self.root, 'ids'):
+            if 'list_category_analytics' in self.root.ids:
+                self.populate_analytics()
+
+    def open_month_picker_dialog(self):
+        """Allows user to select any month from historical records or current."""
+        history = self.db.get_monthly_history_breakdown(limit_months=24)
+        curr = datetime.now().strftime("%Y-%m")
+        if not history:
+            history = [{"month_year": curr, "month_display": self.get_month_display_name(curr), "total_debit": 0.0}]
+        elif not any(h["month_year"] == curr for h in history):
+            history.insert(0, {"month_year": curr, "month_display": self.get_month_display_name(curr), "total_debit": 0.0})
+
+        from kivy.uix.scrollview import ScrollView
+        sv = ScrollView(size_hint=(1, None), height="320dp")
+        box = BoxLayout(orientation="vertical", spacing="6dp", size_hint_y=None, padding=["0dp", "4dp", "0dp", "8dp"])
+        box.bind(minimum_height=box.setter('height'))
+
+        for h in history:
+            m_code = h["month_year"]
+            m_disp = h.get("month_display", m_code)
+            m_spent = h.get("total_debit", 0.0)
+            is_selected = (m_code == self.selected_month)
+
+            btn_text = f"{m_disp}  •  Spent: ₹ {m_spent:,.0f}" + ("  [ACTIVE]" if is_selected else "")
+            btn = MDRaisedButton(
+                text=btn_text,
+                size_hint_x=1,
+                size_hint_y=None,
+                height="42dp",
+                md_bg_color=[0.25, 0.45, 0.85, 1] if is_selected else [0.92, 0.94, 0.98, 1],
+                text_color=[1, 1, 1, 1] if is_selected else [0.2, 0.2, 0.3, 1],
+                on_release=lambda x, m=m_code: (self.dialog.dismiss(), self.set_active_month(m))
+            )
+            box.add_widget(btn)
+
+        sv.add_widget(box)
+
+        self.dialog = MDDialog(
+            title="Select History Month",
+            type="custom",
+            content_cls=sv,
+            buttons=[MDFlatButton(text="CLOSE", on_release=lambda x: self.dialog.dismiss())]
+        )
+        self.dialog.open()
+
+    def update_dashboard_summary(self, month_year: Optional[str] = None):
+        """Updates only the numeric dashboard spend cards & budget for selected month (<5ms)."""
         if not hasattr(self, 'root') or not self.root or not hasattr(self.root, 'ids'):
             return
+        target_month = month_year or getattr(self, 'selected_month', datetime.now().strftime("%Y-%m"))
         try:
-            stats = self.db.get_summary_statistics()
+            stats = self.db.get_summary_statistics(month_year=target_month)
             ids = self.root.ids
+            display_name = self.get_month_display_name(target_month)
+            curr_month = datetime.now().strftime("%Y-%m")
+
+            if 'lbl_selected_month_dash' in ids:
+                ids.lbl_selected_month_dash.text = display_name
+            if 'lbl_spend_period_title' in ids:
+                if target_month == curr_month:
+                    ids.lbl_spend_period_title.text = "Total Spent This Month"
+                else:
+                    ids.lbl_spend_period_title.text = f"Total Spent in {display_name}"
+
             if 'lbl_total_spent' in ids:
                 ids.lbl_total_spent.text = f"₹ {stats['total_debit']:,.2f}"
             if 'lbl_today_spent' in ids:
-                ids.lbl_today_spent.text = f"Today: ₹ {stats['today_debit']:,.2f}"
+                if target_month == curr_month:
+                    ids.lbl_today_spent.text = f"Today: ₹ {stats['today_debit']:,.2f}"
+                else:
+                    ids.lbl_today_spent.text = f"Transactions: {stats.get('transaction_count', 0)}"
             if 'lbl_week_spent' in ids:
-                ids.lbl_week_spent.text = f"This Week: ₹ {stats['week_debit']:,.2f}"
+                if target_month == curr_month:
+                    ids.lbl_week_spent.text = f"This Week: ₹ {stats['week_debit']:,.2f}"
+                else:
+                    avg_day = stats['total_debit'] / 30.0 if stats['total_debit'] > 0 else 0.0
+                    ids.lbl_week_spent.text = f"Avg/Day: ₹ {avg_day:,.0f}"
 
             budget = stats.get("budget", 0.0)
             if 'progress_budget' in ids and 'lbl_budget_status' in ids:
@@ -147,11 +255,11 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                     ids.progress_budget.value = 0
                     ids.lbl_budget_status.text = "No budget set (Tap pencil to set)"
 
-            # Household Balances to Pay (Milk + Staff)
+            # Household Balances to Pay (Milk + Staff) for target_month
             try:
-                milk_summaries = self.db.get_milk_monthly_summary()
+                milk_summaries = self.db.get_milk_monthly_summary(month_year=target_month)
                 total_milk_due = sum(v.get('balance_due', 0.0) for v in milk_summaries)
-                staff_summaries = self.db.get_staff_monthly_summary()
+                staff_summaries = self.db.get_staff_monthly_summary(month_year=target_month)
                 total_staff_due = sum(s.get('balance_due', 0.0) for s in staff_summaries)
                 total_household_due = total_milk_due + total_staff_due
 
@@ -263,16 +371,17 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             txns_list.add_widget(item)
 
     # ----------------- COOK & HOUSE HELPER -----------------
-    def populate_staff_cards(self):
+    def populate_staff_cards(self, month_year: Optional[str] = None):
         if not hasattr(self, 'root') or not self.root or not hasattr(self.root, 'ids'):
             return
         if 'list_staff_cards' not in self.root.ids:
             return
+        target_month = month_year or getattr(self, 'selected_month', datetime.now().strftime("%Y-%m"))
         staff_list = self.root.ids.list_staff_cards
         staff_list.clear_widgets()
 
         try:
-            month_summary = self.db.get_staff_monthly_summary()
+            month_summary = self.db.get_staff_monthly_summary(month_year=target_month)
         except Exception as e:
             print("Error loading staff summary:", e)
             month_summary = []
@@ -501,16 +610,20 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.dialog.open()
 
     # ----------------- DUAL MILKMEN TRACKER -----------------
-    def populate_milk_cards(self):
+    def populate_milk_cards(self, month_year: Optional[str] = None):
         if not hasattr(self, 'root') or not self.root or not hasattr(self.root, 'ids'):
             return
         if 'list_milk_vendors' not in self.root.ids:
             return
+        target_month = month_year or getattr(self, 'selected_month', datetime.now().strftime("%Y-%m"))
+        if 'lbl_selected_month_milk' in self.root.ids:
+            self.root.ids.lbl_selected_month_milk.text = self.get_month_display_name(target_month)
+
         vendors_list = self.root.ids.list_milk_vendors
         vendors_list.clear_widgets()
 
         try:
-            summaries = self.db.get_milk_monthly_summary()
+            summaries = self.db.get_milk_monthly_summary(month_year=target_month)
         except Exception as e:
             print("Error loading milk summaries:", e)
             summaries = []
@@ -548,22 +661,22 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             item.add_widget(icon)
             vendors_list.add_widget(item)
 
-        # Recent Deliveries (across both milkmen)
+        # Recent Deliveries (across both milkmen for this month or recent)
         if 'list_milk_deliveries' in self.root.ids:
             deliv_list = self.root.ids.list_milk_deliveries
             deliv_list.clear_widgets()
             all_delivs = []
             for v in summaries:
                 try:
-                    all_delivs.extend(self.db.get_milk_deliveries(vendor_id=v['vendor_id']))
+                    all_delivs.extend(self.db.get_milk_deliveries(vendor_id=v['vendor_id'], month_year=target_month))
                 except Exception:
                     pass
             all_delivs.sort(key=lambda x: str(x.get('date', '')), reverse=True)
 
             if not all_delivs:
-                deliv_list.add_widget(TwoLineListItem(text="No milk deliveries recorded yet", secondary_text="Tap a milkman above to log daily delivery"))
+                deliv_list.add_widget(TwoLineListItem(text="No milk deliveries for this month", secondary_text="Tap '+ Date Range' or a milkman above to log"))
             else:
-                for d in all_delivs[:8]:
+                for d in all_delivs[:10]:
                     d_qty = float(d.get('quantity_liters') or 0.0)
                     d_rate = float(d.get('rate_at_delivery') or 0.0)
                     d_date = (d.get('date') or '')[:10]
@@ -576,7 +689,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
 
     def open_milk_actions_dialog(self, vendor_data):
         """Dialog to quickly log milk delivery, record payment, or edit price per liter and dues."""
-        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, height="290dp")
+        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, height="320dp")
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -594,8 +707,14 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             md_bg_color=[0.25, 0.45, 0.75, 1],
             on_release=lambda x: self.quick_log_milk(vendor_data['vendor_id'], vendor_data['default_quantity'], yesterday_str)
         )
+        btn_range_add = MDRaisedButton(
+            text="+ Date Range (e.g. 1st to 10th)",
+            size_hint_x=1,
+            md_bg_color=[0.15, 0.65, 0.45, 1],
+            on_release=lambda x: (self.milk_dialog.dismiss(), self.open_range_milk_picker(vendor_data))
+        )
         btn_custom_add = MDFlatButton(
-            text="Log Custom Liters / Other Date",
+            text="Log Single Custom Liters / Past Date",
             size_hint_x=1,
             on_release=lambda x: self.open_custom_milk_delivery(vendor_data)
         )
@@ -615,6 +734,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
 
         box.add_widget(btn_quick_today)
         box.add_widget(btn_quick_yesterday)
+        box.add_widget(btn_range_add)
         box.add_widget(btn_custom_add)
         box.add_widget(btn_pay)
         box.add_widget(btn_edit)
@@ -650,8 +770,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                     default_quantity=qty
                 )
                 self.dialog.dismiss()
-                self.populate_milk_cards()
-                self.update_dashboard_summary()
+                self.populate_milk_cards(month_year=self.selected_month)
+                self.update_dashboard_summary(month_year=self.selected_month)
             except ValueError:
                 pass
 
@@ -672,37 +792,45 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.db.log_milk_delivery(vendor_id=vendor_id, quantity_liters=qty, date=date_str)
         if self.milk_dialog:
             self.milk_dialog.dismiss()
-        self.populate_milk_cards()
-        self.update_dashboard_summary()
+        self.populate_milk_cards(month_year=self.selected_month)
+        self.update_dashboard_summary(month_year=self.selected_month)
 
     def open_custom_milk_delivery(self, vendor_data):
+        """Scrollable dialog for single delivery that never clips on Android phones."""
         if self.milk_dialog:
             self.milk_dialog.dismiss()
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        two_days_ago_str = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
 
-        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, height="240dp")
+        from kivy.uix.scrollview import ScrollView
+        sv = ScrollView(size_hint=(1, None), height="300dp")
+        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, padding=["0dp", "4dp", "0dp", "8dp"])
+        box.bind(minimum_height=box.setter('height'))
 
         # Quick date buttons
-        date_bar = BoxLayout(orientation="horizontal", spacing="8dp", size_hint_y=None, height="36dp")
-        btn_today = MDFlatButton(text="Today", size_hint_x=0.5)
-        btn_yesterday = MDFlatButton(text="Yesterday", size_hint_x=0.5)
+        date_bar = BoxLayout(orientation="horizontal", spacing="6dp", size_hint_y=None, height="34dp")
+        btn_today = MDFlatButton(text="Today", size_hint_x=0.33)
+        btn_yesterday = MDFlatButton(text="Yesterday", size_hint_x=0.33)
+        btn_2ago = MDFlatButton(text="2 Days Ago", size_hint_x=0.34)
         date_bar.add_widget(btn_today)
         date_bar.add_widget(btn_yesterday)
+        date_bar.add_widget(btn_2ago)
 
         txt_date = MDTextField(
-            hint_text="Delivery Date (YYYY-MM-DD)",
+            hint_text="Delivery Date (YYYY-MM-DD or DD/MM/YYYY)",
             text=yesterday_str,
-            helper_text="Tap 'Today' or 'Yesterday' or enter custom date",
+            helper_text="Tap buttons above or enter custom date",
             helper_text_mode="persistent"
         )
         btn_today.bind(on_release=lambda x: setattr(txt_date, 'text', today_str))
         btn_yesterday.bind(on_release=lambda x: setattr(txt_date, 'text', yesterday_str))
+        btn_2ago.bind(on_release=lambda x: setattr(txt_date, 'text', two_days_ago_str))
 
         txt_qty = MDTextField(
             hint_text="Quantity in Liters (e.g. 1.0, 1.5, 2.0)",
-            text=str(vendor_data['default_quantity']),
+            text=str(vendor_data.get('default_quantity', 1.0)),
             input_filter="float"
         )
         txt_notes = MDTextField(
@@ -713,6 +841,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         box.add_widget(txt_date)
         box.add_widget(txt_qty)
         box.add_widget(txt_notes)
+        sv.add_widget(box)
 
         def save_deliv(btn):
             try:
@@ -728,18 +857,175 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                     notes=notes_val
                 )
                 self.dialog.dismiss()
-                self.populate_milk_cards()
-                self.update_dashboard_summary()
+                self.populate_milk_cards(month_year=self.selected_month)
+                self.update_dashboard_summary(month_year=self.selected_month)
             except ValueError:
                 pass
 
         self.dialog = MDDialog(
             title=f"Log Milk - {vendor_data['name']}",
             type="custom",
-            content_cls=box,
+            content_cls=sv,
             buttons=[
                 MDFlatButton(text="CANCEL", on_release=lambda x: self.dialog.dismiss()),
                 MDRaisedButton(text="SAVE ENTRY", on_release=save_deliv)
+            ]
+        )
+        self.dialog.open()
+
+    def open_range_milk_picker(self, vendor_data=None):
+        """Allows user to log milk delivery for a date range (e.g. 1st to 10th) in one click."""
+        from kivy.uix.scrollview import ScrollView
+        from kivymd.uix.button import MDFlatButton, MDRaisedButton
+
+        vendors = self.db.get_milk_vendors()
+        if not vendors:
+            return
+
+        selected_vendor_ref = [vendor_data if vendor_data else vendors[0]]
+
+        today = datetime.now()
+        today_str = today.strftime("%Y-%m-%d")
+        month_start_str = today.strftime("%Y-%m-01")
+        last_7_days_str = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+        last_15_days_str = (today - timedelta(days=14)).strftime("%Y-%m-%d")
+
+        sv = ScrollView(size_hint=(1, None), height="360dp")
+        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, padding=["0dp", "4dp", "0dp", "8dp"])
+        box.bind(minimum_height=box.setter('height'))
+
+        # Vendor Selector Bar (Sundar vs Jain Mandir)
+        vendor_bar = BoxLayout(orientation="horizontal", spacing="6dp", size_hint_y=None, height="36dp")
+        vendor_btns = []
+        for v in vendors:
+            v_btn = MDRaisedButton(
+                text=v['name'],
+                size_hint_x=1.0 / len(vendors),
+                md_bg_color=[0.15, 0.65, 0.45, 1] if v['id'] == selected_vendor_ref[0]['id'] else [0.85, 0.85, 0.9, 1],
+                text_color=[1, 1, 1, 1] if v['id'] == selected_vendor_ref[0]['id'] else [0.2, 0.2, 0.2, 1]
+            )
+            def make_vendor_sel(target_v, b=v_btn):
+                def on_click(instance):
+                    selected_vendor_ref[0] = target_v
+                    for other_b in vendor_btns:
+                        other_b.md_bg_color = [0.85, 0.85, 0.9, 1]
+                        other_b.text_color = [0.2, 0.2, 0.2, 1]
+                    b.md_bg_color = [0.15, 0.65, 0.45, 1]
+                    b.text_color = [1, 1, 1, 1]
+                    txt_qty.text = str(target_v.get('default_quantity', 1.0))
+                    update_calc_preview()
+                return on_click
+            v_btn.bind(on_release=make_vendor_sel(v, v_btn))
+            vendor_btns.append(v_btn)
+            vendor_bar.add_widget(v_btn)
+        box.add_widget(vendor_bar)
+
+        # Quick Range Presets
+        preset_bar = BoxLayout(orientation="horizontal", spacing="4dp", size_hint_y=None, height="32dp")
+        btn_last7 = MDFlatButton(text="Last 7 Days", size_hint_x=0.33)
+        btn_last15 = MDFlatButton(text="Last 15 Days", size_hint_x=0.33)
+        btn_month = MDFlatButton(text="Month So Far", size_hint_x=0.34)
+        preset_bar.add_widget(btn_last7)
+        preset_bar.add_widget(btn_last15)
+        preset_bar.add_widget(btn_month)
+        box.add_widget(preset_bar)
+
+        txt_from = MDTextField(
+            hint_text="From Date (YYYY-MM-DD or DD/MM/YYYY)",
+            text=last_7_days_str,
+            helper_text="Start date of delivery range",
+            helper_text_mode="persistent"
+        )
+        txt_to = MDTextField(
+            hint_text="To Date (YYYY-MM-DD or DD/MM/YYYY)",
+            text=today_str,
+            helper_text="End date of delivery range",
+            helper_text_mode="persistent"
+        )
+        txt_qty = MDTextField(
+            hint_text="Quantity Per Day (Liters)",
+            text=str(selected_vendor_ref[0].get('default_quantity', 1.0)),
+            input_filter="float"
+        )
+        txt_notes = MDTextField(
+            hint_text="Notes (Optional, e.g. Daily morning delivery)"
+        )
+
+        lbl_summary = MDLabel(
+            text="Calculating...",
+            font_style="Caption",
+            bold=True,
+            theme_text_color="Custom",
+            text_color=[0.15, 0.55, 0.35, 1],
+            size_hint_y=None,
+            height="24dp"
+        )
+
+        def update_calc_preview(*args):
+            try:
+                from src.database.db_manager import normalize_date_str
+                f_str = normalize_date_str(txt_from.text.strip())
+                t_str = normalize_date_str(txt_to.text.strip())
+                d1 = datetime.strptime(f_str, "%Y-%m-%d")
+                d2 = datetime.strptime(t_str, "%Y-%m-%d")
+                days = (d2 - d1).days + 1
+                if days <= 0:
+                    lbl_summary.text = "From Date must be before or equal to To Date"
+                    lbl_summary.text_color = [0.85, 0.2, 0.1, 1]
+                    return
+                q = float(txt_qty.text.strip() or 0)
+                tot_l = days * q
+                v_rate = float(selected_vendor_ref[0].get('rate_per_liter', 60.0))
+                tot_cost = tot_l * v_rate
+                lbl_summary.text = f"Will log {days} days × {q:.1f}L = {tot_l:.1f} Liters (Total: ₹ {tot_cost:,.0f})"
+                lbl_summary.text_color = [0.15, 0.55, 0.35, 1]
+            except Exception:
+                lbl_summary.text = "Enter valid dates and quantity"
+
+        btn_last7.bind(on_release=lambda x: (setattr(txt_from, 'text', last_7_days_str), setattr(txt_to, 'text', today_str), update_calc_preview()))
+        btn_last15.bind(on_release=lambda x: (setattr(txt_from, 'text', last_15_days_str), setattr(txt_to, 'text', today_str), update_calc_preview()))
+        btn_month.bind(on_release=lambda x: (setattr(txt_from, 'text', month_start_str), setattr(txt_to, 'text', today_str), update_calc_preview()))
+        txt_from.bind(text=update_calc_preview)
+        txt_to.bind(text=update_calc_preview)
+        txt_qty.bind(text=update_calc_preview)
+
+        update_calc_preview()
+
+        box.add_widget(txt_from)
+        box.add_widget(txt_to)
+        box.add_widget(txt_qty)
+        box.add_widget(txt_notes)
+        box.add_widget(lbl_summary)
+        sv.add_widget(box)
+
+        def save_range(btn):
+            try:
+                qty = float(txt_qty.text.strip())
+                if qty <= 0:
+                    return
+                f_date = txt_from.text.strip()
+                t_date = txt_to.text.strip()
+                v_id = selected_vendor_ref[0]['id']
+                res = self.db.log_milk_delivery_range(
+                    vendor_id=v_id,
+                    from_date=f_date,
+                    to_date=t_date,
+                    quantity_per_day=qty,
+                    notes=txt_notes.text.strip()
+                )
+                self.dialog.dismiss()
+                self.populate_milk_cards(month_year=self.selected_month)
+                self.update_dashboard_summary(month_year=self.selected_month)
+            except Exception as e:
+                print("Error saving milk delivery range:", e)
+
+        self.dialog = MDDialog(
+            title="Log Milk for Date Range",
+            type="custom",
+            content_cls=sv,
+            buttons=[
+                MDFlatButton(text="CANCEL", on_release=lambda x: self.dialog.dismiss()),
+                MDRaisedButton(text="SAVE RANGE", on_release=save_range)
             ]
         )
         self.dialog.open()
@@ -800,44 +1086,87 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
     def populate_analytics(self, stats: Optional[dict] = None):
         if not hasattr(self, 'root') or not self.root or not hasattr(self.root, 'ids'):
             return
-        if 'list_category_analytics' not in self.root.ids:
-            return
 
+        target_month = getattr(self, 'selected_month', datetime.now().strftime("%Y-%m"))
         if stats is None:
-            stats = self.db.get_summary_statistics()
+            stats = self.db.get_summary_statistics(month_year=target_month)
 
-        cat_list = self.root.ids.list_category_analytics
-        cat_list.clear_widgets()
-        total_debit = stats.get("total_debit", 0.0)
+        if 'list_category_analytics' in self.root.ids:
+            cat_list = self.root.ids.list_category_analytics
+            cat_list.clear_widgets()
+            total_debit = stats.get("total_debit", 0.0)
 
-        for item in stats.get("categories", []):
-            pct = (item["total"] / total_debit * 100) if total_debit > 0 else 0
-            list_item = TwoLineAvatarIconListItem(
-                text=f"{item['category']} ({pct:.1f}%)",
-                secondary_text=f"Total: ₹ {item['total']:,.2f}  •  {item['count']} transactions"
-            )
-            icon = IconLeftWidget(
-                icon=get_category_icon(item["category"]),
-                theme_text_color="Custom",
-                text_color=get_category_color(item["category"])
-            )
-            list_item.add_widget(icon)
-            cat_list.add_widget(list_item)
+            for item in stats.get("categories", []):
+                pct = (item["total"] / total_debit * 100) if total_debit > 0 else 0
+                list_item = TwoLineAvatarIconListItem(
+                    text=f"{item['category']} ({pct:.1f}%)",
+                    secondary_text=f"Total: ₹ {item['total']:,.2f}  •  {item['count']} transactions"
+                )
+                icon = IconLeftWidget(
+                    icon=get_category_icon(item["category"]),
+                    theme_text_color="Custom",
+                    text_color=get_category_color(item["category"])
+                )
+                list_item.add_widget(icon)
+                cat_list.add_widget(list_item)
 
-        mode_list = self.root.ids.list_payment_modes
-        mode_list.clear_widgets()
-        for item in stats.get("payment_modes", []):
-            pct = (item["total"] / total_debit * 100) if total_debit > 0 else 0
-            list_item = TwoLineAvatarIconListItem(
-                text=f"{item['payment_mode']} ({pct:.1f}%)",
-                secondary_text=f"Total: ₹ {item['total']:,.2f}  •  {item['count']} transactions"
-            )
-            mode_icon = "contactless-payment" if item["payment_mode"] == "UPI" else (
-                "credit-card" if "Card" in item["payment_mode"] else "cash"
-            )
-            icon = IconLeftWidget(icon=mode_icon)
-            list_item.add_widget(icon)
-            mode_list.add_widget(list_item)
+        if 'list_payment_modes' in self.root.ids:
+            mode_list = self.root.ids.list_payment_modes
+            mode_list.clear_widgets()
+            for item in stats.get("payment_modes", []):
+                pct = (item["total"] / total_debit * 100) if total_debit > 0 else 0
+                list_item = TwoLineAvatarIconListItem(
+                    text=f"{item['payment_mode']} ({pct:.1f}%)",
+                    secondary_text=f"Total: ₹ {item['total']:,.2f}  •  {item['count']} transactions"
+                )
+                mode_icon = "contactless-payment" if item["payment_mode"] == "UPI" else (
+                    "credit-card" if "Card" in item["payment_mode"] else "cash"
+                )
+                icon = IconLeftWidget(icon=mode_icon)
+                list_item.add_widget(icon)
+                mode_list.add_widget(list_item)
+
+        # 1-Year Monthly Breakdown Section
+        if 'list_monthly_history' in self.root.ids:
+            history_list = self.root.ids.list_monthly_history
+            history_list.clear_widgets()
+            try:
+                monthly_records = self.db.get_monthly_history_breakdown(limit_months=12)
+                if not monthly_records:
+                    history_list.add_widget(TwoLineListItem(
+                        text="No past monthly transactions yet",
+                        secondary_text="Scan SMS or add expenses to generate monthly summaries"
+                    ))
+                else:
+                    for m in monthly_records:
+                        m_code = m["month_year"]
+                        m_name = m.get("month_display", m_code)
+                        debit = m.get("total_debit", 0.0)
+                        cnt = m.get("transaction_count", 0)
+                        top_cat = m.get("top_category") or "General"
+                        milk = m.get("milk_total", 0.0)
+                        staff = m.get("staff_total", 0.0)
+
+                        is_active = (m_code == self.selected_month)
+                        tag = " (Viewing)" if is_active else ""
+
+                        item = TwoLineAvatarIconListItem(
+                            text=f"{m_name}{tag} - ₹ {debit:,.0f} Spent",
+                            secondary_text=f"{cnt} txns | Top: {top_cat} | Milk: ₹{milk:,.0f} | Staff: ₹{staff:,.0f}",
+                            on_release=lambda x, code=m_code: (
+                                self.set_active_month(code),
+                                hasattr(self.root, 'ids') and hasattr(self.root.ids, 'bottom_nav') and self.root.ids.bottom_nav.switch_tab('screen_dashboard')
+                            )
+                        )
+                        icon = IconLeftWidget(
+                            icon="calendar-check" if is_active else "calendar-blank-outline",
+                            theme_text_color="Custom",
+                            text_color=[0.2, 0.45, 0.85, 1] if is_active else [0.5, 0.5, 0.5, 1]
+                        )
+                        item.add_widget(icon)
+                        history_list.add_widget(item)
+            except Exception as e:
+                print("Error loading monthly history breakdown:", e)
 
     def filter_transactions(self, query: str):
         self.populate_all_transactions(query=query)
@@ -915,7 +1244,10 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         today_str = datetime.now().strftime("%Y-%m-%d")
         yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, height="380dp")
+        from kivy.uix.scrollview import ScrollView
+        sv = ScrollView(size_hint=(1, None), height="360dp")
+        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, padding=["0dp", "4dp", "0dp", "8dp"])
+        box.bind(minimum_height=box.setter('height'))
 
         txt_amount = MDTextField(hint_text="Amount (e.g. 150)", input_filter="float")
         txt_merchant = MDTextField(hint_text="Merchant / Paid To (e.g. Gym, Grocery, Chai, Milk)")
@@ -952,6 +1284,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         box.add_widget(txt_date)
         box.add_widget(txt_mode)
         box.add_widget(txt_notes)
+        sv.add_widget(box)
 
         def save_expense(btn):
             try:
@@ -988,7 +1321,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.dialog = MDDialog(
             title="Log New Expense",
             type="custom",
-            content_cls=box,
+            content_cls=sv,
             buttons=[
                 MDFlatButton(text="CANCEL", on_release=lambda x: self.dialog.dismiss()),
                 MDRaisedButton(text="SAVE", on_release=save_expense)

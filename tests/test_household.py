@@ -187,6 +187,47 @@ class TestHouseholdAndMilkTracking(unittest.TestCase):
         self.assertEqual(txns[0]['amount'], 250.0)
         self.assertTrue(txns[0]['date'].startswith(yesterday_str))
 
+    def test_milk_delivery_range_logging(self):
+        vendors = self.db.get_milk_vendors()
+        sundar = vendors[0]
+
+        # Log 7 days range (2026-11-01 to 2026-11-07) at 1.5L/day
+        count = self.db.log_milk_delivery_range(
+            vendor_id=sundar['id'],
+            from_date="01/11/2026", # Non-ISO format to test normalize_date_str
+            to_date="07-11-2026",
+            quantity_per_day=1.5,
+            notes="Morning 1.5L batch"
+        )
+        self.assertEqual(count, 7)
+
+        deliveries = self.db.get_milk_deliveries(vendor_id=sundar['id'], month_year="2026-11")
+        self.assertEqual(len(deliveries), 7)
+        total_liters = sum(d['quantity_liters'] for d in deliveries)
+        self.assertEqual(total_liters, 10.5)
+
+    def test_monthly_history_breakdown(self):
+        # Add transactions across multiple past months
+        self.db.add_transaction(amount=5000.0, category="Groceries", date="2026-09-15 10:00:00")
+        self.db.add_transaction(amount=3000.0, category="Food & Dining", date="2026-09-20 12:00:00")
+        self.db.add_transaction(amount=12000.0, category="Shopping", date="2026-10-05 15:00:00")
+        self.db.add_transaction(amount=45000.0, type="CREDIT", category="Transfers & Rent", date="2026-10-01 09:00:00")
+
+        breakdown = self.db.get_monthly_history_breakdown()
+        self.assertGreaterEqual(len(breakdown), 2)
+        months = [b['month_year'] for b in breakdown]
+        self.assertIn("2026-10", months)
+        self.assertIn("2026-09", months)
+
+        oct_item = [b for b in breakdown if b['month_year'] == "2026-10"][0]
+        self.assertEqual(oct_item['total_debit'], 12000.0)
+        self.assertEqual(oct_item['total_credit'], 45000.0)
+        self.assertEqual(oct_item['top_category'], "Shopping")
+
+        sep_item = [b for b in breakdown if b['month_year'] == "2026-09"][0]
+        self.assertEqual(sep_item['total_debit'], 8000.0)
+        self.assertEqual(sep_item['top_category'], "Groceries")
+
 
 if __name__ == "__main__":
     unittest.main()

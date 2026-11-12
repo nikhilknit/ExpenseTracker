@@ -66,6 +66,39 @@ MDScreen:
                         spacing: "16dp"
                         adaptive_height: True
 
+                        # Month Navigation Bar
+                        MDCard:
+                            orientation: "horizontal"
+                            padding: ["8dp", "2dp", "8dp", "2dp"]
+                            radius: [12, 12, 12, 12]
+                            size_hint_y: None
+                            height: "46dp"
+                            elevation: 1
+                            md_bg_color: 0.95, 0.95, 0.98, 1
+
+                            MDIconButton:
+                                icon: "chevron-left"
+                                pos_hint: {"center_y": 0.5}
+                                on_release: app.prev_month()
+
+                            MDLabel:
+                                id: lbl_selected_month_dash
+                                text: "November 2026"
+                                font_style: "Subtitle1"
+                                bold: True
+                                halign: "center"
+                                pos_hint: {"center_y": 0.5}
+
+                            MDIconButton:
+                                icon: "calendar-month"
+                                pos_hint: {"center_y": 0.5}
+                                on_release: app.open_month_picker_dialog()
+
+                            MDIconButton:
+                                icon: "chevron-right"
+                                pos_hint: {"center_y": 0.5}
+                                on_release: app.next_month()
+
                         # Total Spend Card
                         MDCard:
                             orientation: "vertical"
@@ -78,7 +111,8 @@ MDScreen:
                             md_bg_color: app.theme_cls.primary_color
 
                             MDLabel:
-                                text: "Total Spent This Month"
+                                id: lbl_spend_period_title
+                                text: "Total Spent in Month"
                                 font_style: "Subtitle2"
                                 theme_text_color: "Custom"
                                 text_color: 1, 1, 1, 0.8
@@ -417,6 +451,47 @@ MDScreen:
                                     font_style: "Caption"
                                     theme_text_color: "Secondary"
 
+                        # Milk Month Selector & Date Range Action
+                        MDBoxLayout:
+                            orientation: "horizontal"
+                            size_hint_y: None
+                            height: "44dp"
+                            spacing: "8dp"
+
+                            MDCard:
+                                orientation: "horizontal"
+                                padding: ["8dp", "2dp", "8dp", "2dp"]
+                                radius: [10, 10, 10, 10]
+                                elevation: 1
+                                md_bg_color: 0.95, 0.95, 0.98, 1
+
+                                MDIconButton:
+                                    icon: "chevron-left"
+                                    pos_hint: {"center_y": 0.5}
+                                    on_release: app.prev_month()
+
+                                MDLabel:
+                                    id: lbl_selected_month_milk
+                                    text: "November 2026"
+                                    font_style: "Caption"
+                                    bold: True
+                                    halign: "center"
+                                    pos_hint: {"center_y": 0.5}
+
+                                MDIconButton:
+                                    icon: "chevron-right"
+                                    pos_hint: {"center_y": 0.5}
+                                    on_release: app.next_month()
+
+                            MDRaisedButton:
+                                text: "+ Date Range"
+                                icon: "calendar-range"
+                                md_bg_color: 0.15, 0.65, 0.45, 1
+                                size_hint_x: None
+                                width: "135dp"
+                                pos_hint: {"center_y": 0.5}
+                                on_release: app.open_range_milk_picker()
+
                         MDLabel:
                             text: "Milk Vendors (Monthly Bill & Dues)"
                             font_style: "H6"
@@ -454,6 +529,21 @@ MDScreen:
                         padding: ["16dp", "16dp", "16dp", "80dp"]
                         spacing: "16dp"
                         adaptive_height: True
+
+                        # 1-Year Monthly Breakdown Section
+                        MDBoxLayout:
+                            orientation: "horizontal"
+                            size_hint_y: None
+                            height: "30dp"
+                            MDLabel:
+                                text: "1-Year Monthly History"
+                                font_style: "H6"
+                                bold: True
+
+                        MDList:
+                            id: list_monthly_history
+
+                        MDSeparator:
 
                         # Category Spending
                         MDLabel:
