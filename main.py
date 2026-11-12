@@ -43,16 +43,34 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
     def __init__(self, **kwargs):
         if HAS_KIVY:
             super().__init__(**kwargs)
-        self.db = DatabaseManager()
-        self.sms_service = SMSService(self.db)
+        self.db = None
+        self.sms_service = None
         self.dialog = None
         self.budget_dialog = None
         self.staff_dialog = None
         self.milk_dialog = None
         self.filter_category = "All"
+        try:
+            self.db = DatabaseManager()
+            self.sms_service = SMSService(self.db)
+        except Exception as e:
+            import traceback
+            print("INITIAL DB INIT ERROR:", traceback.format_exc())
 
     def build(self):
         try:
+            # Guarantee database is initialized in case __init__ was early
+            if self.db is None:
+                db_path = None
+                if hasattr(self, 'user_data_dir') and self.user_data_dir:
+                    try:
+                        os.makedirs(self.user_data_dir, exist_ok=True)
+                        db_path = os.path.join(self.user_data_dir, "expenses.db")
+                    except Exception:
+                        pass
+                self.db = DatabaseManager(db_path=db_path)
+                self.sms_service = SMSService(self.db)
+
             self.theme_cls.primary_palette = "Indigo"
             self.theme_cls.accent_palette = "Amber"
             self.theme_cls.theme_style = "Light"
@@ -66,7 +84,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             from kivy.uix.scrollview import ScrollView
             from kivy.uix.label import Label
             sv = ScrollView()
-            lbl = Label(text=f"App Load Error:\n\n{err}", size_hint_y=None, color=(1, 0.2, 0.2, 1))
+            lbl = Label(text=f"App Load Error:\n\n{err}", size_hint_y=None, color=(1, 0.2, 0.2, 1), font_size="13sp")
             lbl.bind(texture_size=lbl.setter('size'))
             sv.add_widget(lbl)
             return sv
@@ -82,15 +100,24 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             import traceback
             print("Error in initial load:", traceback.format_exc())
 
-        # Load heavy history list slightly later so initial frame renders instantly
+        # Load heavy history list and request permissions safely after UI is visible
         if HAS_KIVY:
-            Clock.schedule_once(lambda dt: self.populate_all_transactions(), 1.0)
-            Clock.schedule_once(lambda dt: self.sms_service.request_permissions(callback=self._on_permission_granted), 0.8)
+            Clock.schedule_once(lambda dt: self._safe_post_start(), 1.0)
+
+    def _safe_post_start(self):
+        try:
+            self.populate_all_transactions()
+        except Exception as e:
+            print("Error populating history:", e)
+        try:
+            self.sms_service.request_permissions(callback=self._on_permission_granted)
+        except Exception as e:
+            print("Error requesting permissions:", e)
 
     def _on_permission_granted(self, granted: bool):
         if granted and HAS_KIVY:
-            # Sync SMS in background thread without freezing UI!
-            Clock.schedule_once(lambda dt: self.sync_sms(full_scan=False), 0.5)
+            # Safe sync on main thread via Clock
+            Clock.schedule_once(lambda dt: self.sync_sms(full_scan=False), 0.8)
 
     def update_dashboard_summary(self):
         """Updates only the numeric dashboard spend cards & budget without recreating widgets (<5ms)."""
@@ -213,18 +240,35 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
 
     # ----------------- COOK & HOUSE HELPER -----------------
     def populate_staff_cards(self):
+        if not hasattr(self, 'root') or not self.root or not hasattr(self.root, 'ids'):
+            return
+        if 'list_staff_cards' not in self.root.ids:
+            return
         staff_list = self.root.ids.list_staff_cards
         staff_list.clear_widgets()
-        month_summary = self.db.get_staff_monthly_summary()
+
+        try:
+            month_summary = self.db.get_staff_monthly_summary()
+        except Exception as e:
+            print("Error loading staff summary:", e)
+            month_summary = []
 
         for s in month_summary:
-            status = "Cleared" if s['balance_due'] <= 0 else f"₹{s['balance_due']:,.0f} Due"
-            role_icon = "chef-hat" if s['role'] == "Cook" else "broom"
+            due = s.get('balance_due', 0.0)
+            status = "Cleared" if due <= 0 else f"₹{due:,.0f} Due"
+            role = s.get('role', 'Help')
+            role_icon = "chef-hat" if role == "Cook" else "broom"
+            name = s.get('name', 'Staff')
+            salary = s.get('monthly_salary', 0.0)
+            dues = s.get('previous_dues', 0.0)
+            payable = s.get('total_payable', 0.0)
+            paid = s.get('total_paid', 0.0)
+            adv = s.get('advance_paid', 0.0)
 
             item = ThreeLineAvatarIconListItem(
-                text=f"{s['name']} ({s['role']}) - {status}",
-                secondary_text=f"Salary: ₹{s['monthly_salary']:,.0f} + Dues: ₹{s['previous_dues']:,.0f} = ₹{s['total_payable']:,.0f}",
-                tertiary_text=f"Paid: ₹{s['total_paid']:,.0f} (Adv: ₹{s['advance_paid']:,.0f}) • Tap to pay/edit",
+                text=f"{name} ({role}) - {status}",
+                secondary_text=f"Salary: ₹{salary:,.0f} + Dues: ₹{dues:,.0f} = ₹{payable:,.0f}",
+                tertiary_text=f"Paid: ₹{paid:,.0f} (Adv: ₹{adv:,.0f}) • Tap to pay/edit",
                 on_release=lambda x, st=s: self.open_staff_actions_dialog(st)
             )
             icon = IconLeftWidget(icon=role_icon)
@@ -232,19 +276,30 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             staff_list.add_widget(item)
 
         # Payment history
-        history_list = self.root.ids.list_staff_history
-        history_list.clear_widgets()
-        payments = self.db.get_staff_payment_history(limit=10)
-        if not payments:
-            history_list.add_widget(TwoLineListItem(text="No staff payments yet", secondary_text="Tap on a staff member above to pay"))
-            return
+        if 'list_staff_history' in self.root.ids:
+            history_list = self.root.ids.list_staff_history
+            history_list.clear_widgets()
+            try:
+                payments = self.db.get_staff_payment_history(limit=10)
+            except Exception as e:
+                print("Error loading staff payments:", e)
+                payments = []
 
-        for p in payments:
-            item = TwoLineListItem(
-                text=f"{p['staff_name']} - ₹{p['amount']:,.2f} ({p['payment_type']})",
-                secondary_text=f"{p['date'][:10]} via {p['payment_mode']} {('• ' + p['notes']) if p['notes'] else ''}"
-            )
-            history_list.add_widget(item)
+            if not payments:
+                history_list.add_widget(TwoLineListItem(text="No staff payments yet", secondary_text="Tap on a staff member above to pay"))
+            else:
+                for p in payments:
+                    sname = p.get('staff_name', 'Staff')
+                    pamt = p.get('amount', 0.0)
+                    ptype = p.get('payment_type', 'Salary')
+                    pdate = (p.get('date') or '')[:10]
+                    pmode = p.get('payment_mode', 'Cash')
+                    pnotes = p.get('notes') or ''
+                    item = TwoLineListItem(
+                        text=f"{sname} - ₹{pamt:,.2f} ({ptype})",
+                        secondary_text=f"{pdate} via {pmode} {('• ' + pnotes) if pnotes else ''}"
+                    )
+                    history_list.add_widget(item)
 
     def open_staff_actions_dialog(self, staff_data):
         """Action options for Cook / House Helper."""
@@ -391,15 +446,33 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
 
     # ----------------- DUAL MILKMEN TRACKER -----------------
     def populate_milk_cards(self):
+        if not hasattr(self, 'root') or not self.root or not hasattr(self.root, 'ids'):
+            return
+        if 'list_milk_vendors' not in self.root.ids:
+            return
         vendors_list = self.root.ids.list_milk_vendors
         vendors_list.clear_widgets()
-        summaries = self.db.get_milk_monthly_summary()
+
+        try:
+            summaries = self.db.get_milk_monthly_summary()
+        except Exception as e:
+            print("Error loading milk summaries:", e)
+            summaries = []
 
         for v in summaries:
+            v_due = v.get('balance_due', 0.0)
+            v_name = v.get('name', 'Milkman')
+            v_rate = v.get('rate_per_liter', 0.0)
+            v_liters = v.get('total_liters', 0.0)
+            v_bill = v.get('delivery_bill', 0.0)
+            v_dues = v.get('previous_dues', 0.0)
+            v_payable = v.get('total_payable', 0.0)
+            v_paid = v.get('total_paid', 0.0)
+
             item = ThreeLineAvatarIconListItem(
-                text=f"{v['name']} (₹{v['balance_due']:,.0f} Due)",
-                secondary_text=f"Rate: ₹{v['rate_per_liter']:.0f}/L | {v['total_liters']:.1f}L = ₹{v['delivery_bill']:,.0f} + Dues: ₹{v['previous_dues']:,.0f}",
-                tertiary_text=f"Total: ₹{v['total_payable']:,.0f} | Paid: ₹{v['total_paid']:,.0f} • Tap to manage",
+                text=f"{v_name} (₹{v_due:,.0f} Due)",
+                secondary_text=f"Rate: ₹{v_rate:.0f}/L | {v_liters:.1f}L = ₹{v_bill:,.0f} + Dues: ₹{v_dues:,.0f}",
+                tertiary_text=f"Total: ₹{v_payable:,.0f} | Paid: ₹{v_paid:,.0f} • Tap to manage",
                 on_release=lambda x, ven=v: self.open_milk_actions_dialog(ven)
             )
             icon = IconLeftWidget(icon="bottle-wine-outline")
@@ -407,21 +480,30 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             vendors_list.add_widget(item)
 
         # Recent Deliveries (across both milkmen)
-        deliv_list = self.root.ids.list_milk_deliveries
-        deliv_list.clear_widgets()
-        all_delivs = []
-        for v in summaries:
-            all_delivs.extend(self.db.get_milk_deliveries(vendor_id=v['vendor_id']))
-        all_delivs.sort(key=lambda x: x['date'], reverse=True)
+        if 'list_milk_deliveries' in self.root.ids:
+            deliv_list = self.root.ids.list_milk_deliveries
+            deliv_list.clear_widgets()
+            all_delivs = []
+            for v in summaries:
+                try:
+                    all_delivs.extend(self.db.get_milk_deliveries(vendor_id=v['vendor_id']))
+                except Exception:
+                    pass
+            all_delivs.sort(key=lambda x: str(x.get('date', '')), reverse=True)
 
-        if not all_delivs:
-            deliv_list.add_widget(TwoLineListItem(text="No milk deliveries recorded yet", secondary_text="Tap a milkman above to log daily delivery"))
-            return
-        for d in all_delivs[:8]:
-            deliv_list.add_widget(TwoLineListItem(
-                text=f"{d['date']} - {d['quantity_liters']} L ({d['vendor_name']})",
-                secondary_text=f"Cost: ₹{d['quantity_liters'] * d['rate_at_delivery']:,.0f} {('• ' + d['notes']) if d['notes'] else ''}"
-            ))
+            if not all_delivs:
+                deliv_list.add_widget(TwoLineListItem(text="No milk deliveries recorded yet", secondary_text="Tap a milkman above to log daily delivery"))
+            else:
+                for d in all_delivs[:8]:
+                    d_qty = float(d.get('quantity_liters') or 0.0)
+                    d_rate = float(d.get('rate_at_delivery') or 0.0)
+                    d_date = (d.get('date') or '')[:10]
+                    d_vname = d.get('vendor_name', 'Milkman')
+                    d_notes = d.get('notes') or ''
+                    deliv_list.add_widget(TwoLineListItem(
+                        text=f"{d_date} - {d_qty:.1f} L ({d_vname})",
+                        secondary_text=f"Cost: ₹{d_qty * d_rate:,.0f} {('• ' + d_notes) if d_notes else ''}"
+                    ))
 
     def open_milk_actions_dialog(self, vendor_data):
         """Dialog to quickly log milk delivery, record payment, or edit price per liter and dues."""
@@ -616,7 +698,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.populate_all_transactions(query=query)
 
     def sync_sms(self, full_scan: bool = False):
-        """Executes SMS inbox scan in a background thread to prevent UI freezing."""
+        """Executes SMS inbox scan safely on main thread via Clock without threading JNI crash."""
         if hasattr(self, '_sync_active') and self._sync_active:
             return
         self._sync_active = True
@@ -626,25 +708,22 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             if 'lbl_sms_sync_status' in self.root.ids:
                 self.root.ids.lbl_sms_sync_status.text = f"{scan_type} in progress..."
             if 'lbl_sync_log' in self.root.ids:
-                self.root.ids.lbl_sync_log.text = f"[{datetime.now().strftime('%H:%M:%S')}] Scanning SMS in background..."
+                self.root.ids.lbl_sync_log.text = f"[{datetime.now().strftime('%H:%M:%S')}] Scanning SMS..."
 
-        def worker():
+        def do_sync(dt=None):
             try:
-                result = self.sms_service.sync_sms_transactions(full_scan=full_scan)
-                if HAS_KIVY:
-                    Clock.schedule_once(lambda dt: self._on_sync_finished(result, scan_type), 0)
-                else:
-                    self._on_sync_finished(result, scan_type)
+                limit = None if full_scan else 100
+                result = self.sms_service.sync_sms_transactions(limit=limit, full_scan=full_scan)
+                self._on_sync_finished(result, scan_type)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                if HAS_KIVY:
-                    Clock.schedule_once(lambda dt: self._on_sync_error(str(e)), 0)
-                else:
-                    self._on_sync_error(str(e))
+                self._on_sync_error(str(e))
 
-        import threading
-        threading.Thread(target=worker, daemon=True).start()
+        if HAS_KIVY:
+            Clock.schedule_once(do_sync, 0.1)
+        else:
+            do_sync()
 
     def _on_sync_finished(self, result: dict, scan_type: str):
         self._sync_active = False
@@ -877,17 +956,51 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
 
 if __name__ == '__main__':
     if HAS_KIVY:
-        ExpenseTrackerApp().run()
+        try:
+            ExpenseTrackerApp().run()
+        except Exception as e:
+            import traceback
+            err = traceback.format_exc()
+            print("FATAL CRASH IN RUN():\n", err)
+            try:
+                from kivy.app import App
+                from kivy.uix.scrollview import ScrollView
+                from kivy.uix.label import Label
+                class CrashReporterApp(App):
+                    def build(self):
+                        sv = ScrollView()
+                        lbl = Label(
+                            text=f"Startup Error:\n\n{err}\n\nPlease take a screenshot of this error.",
+                            size_hint_y=None,
+                            color=(1, 0.2, 0.2, 1),
+                            font_size="13sp"
+                        )
+                        lbl.bind(texture_size=lbl.setter('size'))
+                        sv.add_widget(lbl)
+                        return sv
+                CrashReporterApp().run()
+            except Exception:
+                pass
     else:
         is_android = ('ANDROID_ARGUMENT' in os.environ or 'PYTHON_SERVICE_ARGUMENT' in os.environ)
         if is_android:
             print("KIVY LOAD ERROR:\n", KIVY_IMPORT_ERROR)
             try:
                 from kivy.app import App
+                from kivy.uix.scrollview import ScrollView
                 from kivy.uix.label import Label
                 class FallbackApp(App):
                     def build(self):
-                        return Label(text=f"Android Startup Failed:\n\n{KIVY_IMPORT_ERROR}")
+                        sv = ScrollView()
+                        lbl = Label(
+                            text=f"Android Startup Failed:\n\n{KIVY_IMPORT_ERROR}",
+                            size_hint_y=None,
+                            color=(1, 0.2, 0.2, 1),
+                            font_size="13sp"
+                        )
+                        lbl.bind(texture_size=lbl.setter('size'))
+                        sv.add_widget(lbl)
+                        return sv
                 FallbackApp().run()
             except Exception:
                 pass

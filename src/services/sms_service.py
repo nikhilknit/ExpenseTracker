@@ -61,7 +61,7 @@ class SMSService:
                 if callback:
                     callback(granted)
 
-            permissions = [Permission.READ_SMS]
+            permissions = [Permission.READ_SMS, Permission.RECEIVE_SMS]
             request_permissions(permissions, on_permission_result)
         except Exception as e:
             logger.error(f"Error requesting Android permissions: {e}")

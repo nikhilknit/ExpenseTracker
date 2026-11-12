@@ -15,7 +15,7 @@ def get_database_path() -> str:
                 target_dir = app.user_data_dir
                 os.makedirs(target_dir, exist_ok=True)
                 return os.path.join(target_dir, "expenses.db")
-            for env_var in ["ANDROID_APP_PATH", "ANDROID_PRIVATE"]:
+            for env_var in ["ANDROID_PRIVATE", "ANDROID_ARGUMENT", "ANDROID_APP_PATH"]:
                 val = os.environ.get(env_var)
                 if val and os.path.exists(val):
                     return os.path.join(val, "expenses.db")
