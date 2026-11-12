@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 
 # Path setup
@@ -146,6 +146,29 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 else:
                     ids.progress_budget.value = 0
                     ids.lbl_budget_status.text = "No budget set (Tap pencil to set)"
+
+            # Household Balances to Pay (Milk + Staff)
+            try:
+                milk_summaries = self.db.get_milk_monthly_summary()
+                total_milk_due = sum(v.get('balance_due', 0.0) for v in milk_summaries)
+                staff_summaries = self.db.get_staff_monthly_summary()
+                total_staff_due = sum(s.get('balance_due', 0.0) for s in staff_summaries)
+                total_household_due = total_milk_due + total_staff_due
+
+                if 'lbl_dash_total_balance' in ids:
+                    if total_household_due > 0:
+                        ids.lbl_dash_total_balance.text = f"₹ {total_household_due:,.2f}"
+                        ids.lbl_dash_total_balance.text_color = [0.85, 0.2, 0.1, 1]
+                    else:
+                        ids.lbl_dash_total_balance.text = "₹ 0 (All Cleared ✓)"
+                        ids.lbl_dash_total_balance.text_color = [0.15, 0.65, 0.45, 1]
+
+                if 'lbl_dash_milk_balance' in ids:
+                    ids.lbl_dash_milk_balance.text = f"Milk: ₹ {total_milk_due:,.0f} Due"
+                if 'lbl_dash_staff_balance' in ids:
+                    ids.lbl_dash_staff_balance.text = f"Staff: ₹ {total_staff_due:,.0f} Due"
+            except Exception as e:
+                print("Error calculating pending balances for dashboard:", e)
         except Exception as e:
             print("Error updating dashboard:", e)
 
@@ -253,6 +276,18 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         except Exception as e:
             print("Error loading staff summary:", e)
             month_summary = []
+
+        total_staff_due = sum(s.get('balance_due', 0.0) for s in month_summary)
+        breakdown_parts = [f"{s.get('name', 'Staff')}: ₹{s.get('balance_due', 0.0):,.0f}" for s in month_summary]
+        if 'lbl_total_staff_balance' in self.root.ids:
+            if total_staff_due > 0:
+                self.root.ids.lbl_total_staff_balance.text = f"₹ {total_staff_due:,.2f}"
+                self.root.ids.lbl_total_staff_balance.text_color = [0.85, 0.2, 0.1, 1]
+            else:
+                self.root.ids.lbl_total_staff_balance.text = "₹ 0.00 (All Cleared ✓)"
+                self.root.ids.lbl_total_staff_balance.text_color = [0.15, 0.65, 0.45, 1]
+        if 'lbl_staff_balance_breakdown' in self.root.ids:
+            self.root.ids.lbl_staff_balance_breakdown.text = " • ".join(breakdown_parts) if breakdown_parts else "All staff cleared"
 
         for s in month_summary:
             due = s.get('balance_due', 0.0)
@@ -369,14 +404,30 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.dialog.open()
 
     def open_staff_payment_dialog(self, staff_data):
-        """Dialog to pay Cook or House Helper."""
-        box = BoxLayout(orientation="vertical", spacing="10dp", size_hint_y=None, height="200dp")
+        """Dialog to pay Cook or House Helper with custom date support."""
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, height="270dp")
         txt_amt = MDTextField(hint_text="Amount (₹)", text=str(staff_data['balance_due']) if staff_data['balance_due'] > 0 else "500", input_filter="float")
         txt_type = MDTextField(hint_text="Type: Salary / Advance", text="Salary" if staff_data['balance_due'] > 0 else "Advance")
+
+        date_bar = BoxLayout(orientation="horizontal", spacing="8dp", size_hint_y=None, height="32dp")
+        btn_today = MDFlatButton(text="Today", size_hint_x=0.5)
+        btn_yesterday = MDFlatButton(text="Yesterday", size_hint_x=0.5)
+        date_bar.add_widget(btn_today)
+        date_bar.add_widget(btn_yesterday)
+
+        txt_date = MDTextField(hint_text="Payment Date (YYYY-MM-DD)", text=today_str, helper_text="Tap Today/Yesterday or enter date", helper_text_mode="on_focus")
+        btn_today.bind(on_release=lambda x: setattr(txt_date, 'text', today_str))
+        btn_yesterday.bind(on_release=lambda x: setattr(txt_date, 'text', yesterday_str))
+
         txt_notes = MDTextField(hint_text="Notes (Optional)")
 
         box.add_widget(txt_amt)
         box.add_widget(txt_type)
+        box.add_widget(date_bar)
+        box.add_widget(txt_date)
         box.add_widget(txt_notes)
 
         def save_pay(btn):
@@ -384,10 +435,14 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 amt = float(txt_amt.text.strip())
                 ptype = txt_type.text.strip() or "Salary"
                 notes = txt_notes.text.strip()
+                date_val = txt_date.text.strip() or today_str
+                if len(date_val) == 10:
+                    date_val = f"{date_val} {datetime.now().strftime('%H:%M:%S')}"
                 self.db.log_staff_payment(
                     staff_id=staff_data['id'],
                     amount=amt,
                     payment_type=ptype,
+                    date=date_val,
                     notes=notes
                 )
                 self.staff_dialog.dismiss()
@@ -460,6 +515,18 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             print("Error loading milk summaries:", e)
             summaries = []
 
+        total_milk_due = sum(v.get('balance_due', 0.0) for v in summaries)
+        breakdown_parts = [f"{v.get('name', 'Vendor')}: ₹{v.get('balance_due', 0.0):,.0f}" for v in summaries]
+        if 'lbl_total_milk_balance' in self.root.ids:
+            if total_milk_due > 0:
+                self.root.ids.lbl_total_milk_balance.text = f"₹ {total_milk_due:,.2f}"
+                self.root.ids.lbl_total_milk_balance.text_color = [0.85, 0.2, 0.1, 1]
+            else:
+                self.root.ids.lbl_total_milk_balance.text = "₹ 0.00 (All Cleared ✓)"
+                self.root.ids.lbl_total_milk_balance.text_color = [0.15, 0.65, 0.45, 1]
+        if 'lbl_milk_balance_breakdown' in self.root.ids:
+            self.root.ids.lbl_milk_balance_breakdown.text = " • ".join(breakdown_parts) if breakdown_parts else "All vendors cleared"
+
         for v in summaries:
             v_due = v.get('balance_due', 0.0)
             v_name = v.get('name', 'Milkman')
@@ -470,10 +537,11 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             v_payable = v.get('total_payable', 0.0)
             v_paid = v.get('total_paid', 0.0)
 
+            status_text = f"₹{v_due:,.0f} DUE TO PAY" if v_due > 0 else "ALL CLEARED ✓"
             item = ThreeLineAvatarIconListItem(
-                text=f"{v_name} (₹{v_due:,.0f} Due)",
+                text=f"{v_name} • {status_text}",
                 secondary_text=f"Rate: ₹{v_rate:.0f}/L | {v_liters:.1f}L = ₹{v_bill:,.0f} + Dues: ₹{v_dues:,.0f}",
-                tertiary_text=f"Total: ₹{v_payable:,.0f} | Paid: ₹{v_paid:,.0f} • Tap to manage",
+                tertiary_text=f"Total: ₹{v_payable:,.0f} | Paid: ₹{v_paid:,.0f} • Tap to log/pay",
                 on_release=lambda x, ven=v: self.open_milk_actions_dialog(ven)
             )
             icon = IconLeftWidget(icon="bottle-wine-outline")
@@ -508,37 +576,51 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
 
     def open_milk_actions_dialog(self, vendor_data):
         """Dialog to quickly log milk delivery, record payment, or edit price per liter and dues."""
-        box = BoxLayout(orientation="vertical", spacing="12dp", size_hint_y=None, height="240dp")
-        
-        btn_quick_add = MDRaisedButton(
-            text=f"+{vendor_data['default_quantity']} Liters Today",
+        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, height="290dp")
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        today_display = datetime.now().strftime("%d %b")
+        yesterday_display = (datetime.now() - timedelta(days=1)).strftime("%d %b")
+
+        btn_quick_today = MDRaisedButton(
+            text=f"+{vendor_data['default_quantity']}L Today ({today_display})",
             size_hint_x=1,
-            on_release=lambda x: self.quick_log_milk(vendor_data['vendor_id'], vendor_data['default_quantity'])
+            on_release=lambda x: self.quick_log_milk(vendor_data['vendor_id'], vendor_data['default_quantity'], today_str)
+        )
+        btn_quick_yesterday = MDRaisedButton(
+            text=f"+{vendor_data['default_quantity']}L Yesterday ({yesterday_display})",
+            size_hint_x=1,
+            md_bg_color=[0.25, 0.45, 0.75, 1],
+            on_release=lambda x: self.quick_log_milk(vendor_data['vendor_id'], vendor_data['default_quantity'], yesterday_str)
         )
         btn_custom_add = MDFlatButton(
-            text="Log Custom Liters / Date",
+            text="Log Custom Liters / Other Date",
             size_hint_x=1,
             on_release=lambda x: self.open_custom_milk_delivery(vendor_data)
         )
+        due_lbl = f"₹{vendor_data['balance_due']:,.0f} Due" if vendor_data['balance_due'] > 0 else "Cleared"
         btn_pay = MDRaisedButton(
-            text=f"Pay Milkman (₹{vendor_data['balance_due']:,.0f} Due)",
+            text=f"Pay Milkman ({due_lbl})",
             md_bg_color=[0.15, 0.65, 0.45, 1],
             size_hint_x=1,
-            on_release=lambda x: self.open_milk_payment_dialog(vendor_data)
+            on_release=lambda x: (self.milk_dialog.dismiss(), self.open_milk_payment_dialog(vendor_data))
         )
         btn_edit = MDRaisedButton(
             text=f"Edit Price/Liter & Dues (₹{vendor_data['rate_per_liter']}/L)",
             size_hint_x=1,
+            md_bg_color=[0.5, 0.5, 0.5, 1],
             on_release=lambda x: (self.milk_dialog.dismiss(), self.open_edit_milk_dialog(vendor_data))
         )
 
-        box.add_widget(btn_quick_add)
+        box.add_widget(btn_quick_today)
+        box.add_widget(btn_quick_yesterday)
         box.add_widget(btn_custom_add)
         box.add_widget(btn_pay)
         box.add_widget(btn_edit)
 
         self.milk_dialog = MDDialog(
-            title=f"Manage: {vendor_data['name']}",
+            title=f"Manage: {vendor_data['name']} (₹{vendor_data['balance_due']:,.0f} Due)",
             type="custom",
             content_cls=box,
             buttons=[MDFlatButton(text="CLOSE", on_release=lambda x: self.milk_dialog.dismiss())]
@@ -584,8 +666,10 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         )
         self.dialog.open()
 
-    def quick_log_milk(self, vendor_id, qty):
-        self.db.log_milk_delivery(vendor_id=vendor_id, quantity_liters=qty)
+    def quick_log_milk(self, vendor_id, qty, date_str=None):
+        if not date_str:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+        self.db.log_milk_delivery(vendor_id=vendor_id, quantity_liters=qty, date=date_str)
         if self.milk_dialog:
             self.milk_dialog.dismiss()
         self.populate_milk_cards()
@@ -595,14 +679,54 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         if self.milk_dialog:
             self.milk_dialog.dismiss()
 
-        box = BoxLayout(orientation="vertical", spacing="10dp", size_hint_y=None, height="120dp")
-        txt_qty = MDTextField(hint_text="Quantity in Liters (e.g. 1.5)", text=str(vendor_data['default_quantity']), input_filter="float")
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, height="240dp")
+
+        # Quick date buttons
+        date_bar = BoxLayout(orientation="horizontal", spacing="8dp", size_hint_y=None, height="36dp")
+        btn_today = MDFlatButton(text="Today", size_hint_x=0.5)
+        btn_yesterday = MDFlatButton(text="Yesterday", size_hint_x=0.5)
+        date_bar.add_widget(btn_today)
+        date_bar.add_widget(btn_yesterday)
+
+        txt_date = MDTextField(
+            hint_text="Delivery Date (YYYY-MM-DD)",
+            text=yesterday_str,
+            helper_text="Tap 'Today' or 'Yesterday' or enter custom date",
+            helper_text_mode="persistent"
+        )
+        btn_today.bind(on_release=lambda x: setattr(txt_date, 'text', today_str))
+        btn_yesterday.bind(on_release=lambda x: setattr(txt_date, 'text', yesterday_str))
+
+        txt_qty = MDTextField(
+            hint_text="Quantity in Liters (e.g. 1.0, 1.5, 2.0)",
+            text=str(vendor_data['default_quantity']),
+            input_filter="float"
+        )
+        txt_notes = MDTextField(
+            hint_text="Notes (Optional, e.g. Extra milk, evening)"
+        )
+
+        box.add_widget(date_bar)
+        box.add_widget(txt_date)
         box.add_widget(txt_qty)
+        box.add_widget(txt_notes)
 
         def save_deliv(btn):
             try:
                 qty = float(txt_qty.text.strip())
-                self.db.log_milk_delivery(vendor_id=vendor_data['vendor_id'], quantity_liters=qty)
+                if qty <= 0:
+                    return
+                date_val = txt_date.text.strip() or today_str
+                notes_val = txt_notes.text.strip()
+                self.db.log_milk_delivery(
+                    vendor_id=vendor_data['vendor_id'],
+                    quantity_liters=qty,
+                    date=date_val,
+                    notes=notes_val
+                )
                 self.dialog.dismiss()
                 self.populate_milk_cards()
                 self.update_dashboard_summary()
@@ -615,7 +739,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             content_cls=box,
             buttons=[
                 MDFlatButton(text="CANCEL", on_release=lambda x: self.dialog.dismiss()),
-                MDRaisedButton(text="SAVE", on_release=save_deliv)
+                MDRaisedButton(text="SAVE ENTRY", on_release=save_deliv)
             ]
         )
         self.dialog.open()
@@ -624,17 +748,37 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         if self.milk_dialog:
             self.milk_dialog.dismiss()
 
-        box = BoxLayout(orientation="vertical", spacing="10dp", size_hint_y=None, height="150dp")
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, height="240dp")
         txt_amt = MDTextField(hint_text="Amount Paid (₹)", text=str(vendor_data['balance_due']) if vendor_data['balance_due'] > 0 else "", input_filter="float")
+
+        date_bar = BoxLayout(orientation="horizontal", spacing="8dp", size_hint_y=None, height="32dp")
+        btn_today = MDFlatButton(text="Today", size_hint_x=0.5)
+        btn_yesterday = MDFlatButton(text="Yesterday", size_hint_x=0.5)
+        date_bar.add_widget(btn_today)
+        date_bar.add_widget(btn_yesterday)
+
+        txt_date = MDTextField(hint_text="Payment Date (YYYY-MM-DD)", text=today_str, helper_text="Tap Today/Yesterday or enter date", helper_text_mode="on_focus")
+        btn_today.bind(on_release=lambda x: setattr(txt_date, 'text', today_str))
+        btn_yesterday.bind(on_release=lambda x: setattr(txt_date, 'text', yesterday_str))
+
         txt_notes = MDTextField(hint_text="Notes (Optional)")
+
         box.add_widget(txt_amt)
+        box.add_widget(date_bar)
+        box.add_widget(txt_date)
         box.add_widget(txt_notes)
 
         def save_milk_pay(btn):
             try:
                 amt = float(txt_amt.text.strip())
                 notes = txt_notes.text.strip()
-                self.db.log_milk_payment(vendor_id=vendor_data['vendor_id'], amount=amt, notes=notes)
+                date_val = txt_date.text.strip() or today_str
+                if len(date_val) == 10:
+                    date_val = f"{date_val} {datetime.now().strftime('%H:%M:%S')}"
+                self.db.log_milk_payment(vendor_id=vendor_data['vendor_id'], amount=amt, date=date_val, notes=notes)
                 self.dialog.dismiss()
                 self.populate_milk_cards()
                 self.update_dashboard_summary()
@@ -767,23 +911,45 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             self.root.ids.lbl_sync_log.text = "Could not parse monetary transaction from this text. Ensure it has amount and debit/credit alert."
 
     def open_add_expense_dialog(self):
-        """Opens modal dialog to log cash or manual expenses with custom or standard categories."""
-        box = BoxLayout(orientation="vertical", spacing="10dp", size_hint_y=None, height="300dp")
+        """Opens modal dialog to log cash or manual expenses with custom date and custom categories."""
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        box = BoxLayout(orientation="vertical", spacing="8dp", size_hint_y=None, height="380dp")
 
         txt_amount = MDTextField(hint_text="Amount (e.g. 150)", input_filter="float")
-        txt_merchant = MDTextField(hint_text="Merchant / Paid To (e.g. Gym, Grocery, Chai)")
+        txt_merchant = MDTextField(hint_text="Merchant / Paid To (e.g. Gym, Grocery, Chai, Milk)")
         txt_category = MDTextField(
             hint_text="Category (Type custom or pick standard)",
             text="Food & Dining",
             helper_text="Enter any custom category (e.g. Gym, Books, Car, Pet Care)",
             helper_text_mode="on_focus"
         )
+
+        # Quick date buttons
+        date_bar = BoxLayout(orientation="horizontal", spacing="8dp", size_hint_y=None, height="32dp")
+        btn_set_today = MDFlatButton(text="Today", size_hint_x=0.5)
+        btn_set_yesterday = MDFlatButton(text="Yesterday", size_hint_x=0.5)
+        date_bar.add_widget(btn_set_today)
+        date_bar.add_widget(btn_set_yesterday)
+
+        txt_date = MDTextField(
+            hint_text="Date (YYYY-MM-DD)",
+            text=today_str,
+            helper_text="Tap Today/Yesterday or enter custom date",
+            helper_text_mode="persistent"
+        )
+        btn_set_today.bind(on_release=lambda x: setattr(txt_date, 'text', today_str))
+        btn_set_yesterday.bind(on_release=lambda x: setattr(txt_date, 'text', yesterday_str))
+
         txt_mode = MDTextField(hint_text="Mode: Cash / UPI / Card", text="Cash")
         txt_notes = MDTextField(hint_text="Notes (Optional)")
 
         box.add_widget(txt_amount)
         box.add_widget(txt_merchant)
         box.add_widget(txt_category)
+        box.add_widget(date_bar)
+        box.add_widget(txt_date)
         box.add_widget(txt_mode)
         box.add_widget(txt_notes)
 
@@ -799,6 +965,9 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             mode = txt_mode.text.strip() or "Cash"
             category = txt_category.text.strip() or "Others"
             notes = txt_notes.text.strip()
+            date_val = txt_date.text.strip() or today_str
+            if len(date_val) == 10:
+                date_val = f"{date_val} {datetime.now().strftime('%H:%M:%S')}"
 
             self.db.add_transaction(
                 amount=amt,
@@ -806,6 +975,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 payment_mode=mode,
                 merchant=merchant,
                 notes=notes,
+                date=date_val,
                 is_manual=1
             )
             if merchant and merchant != "Cash Expense" and category != "Others":

@@ -92,6 +92,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
     </div>
 
+    <!-- Pending Household Balances Card -->
+    <div onclick="switchView('milk')" class="bg-amber-50/80 hover:bg-amber-100/80 border border-amber-200 rounded-2xl p-3.5 shadow-sm flex items-center justify-between cursor-pointer transition">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center text-lg">
+          <i class="fa-solid fa-coins"></i>
+        </div>
+        <div>
+          <div class="text-xs font-bold text-slate-800">Pending Balances to Pay</div>
+          <div class="text-[11px] text-slate-500" id="dash-pending-breakdown">Milk: ₹0 • Staff: ₹0</div>
+        </div>
+      </div>
+      <div class="text-right">
+        <div class="text-base font-extrabold text-amber-700" id="dash-total-pending">₹ 0.00</div>
+        <div class="text-[10px] text-slate-400 font-medium">Tap to view</div>
+      </div>
+    </div>
+
     <!-- Quick Tab Selector (5 Tabs) -->
     <div class="grid grid-cols-5 gap-1 bg-slate-200/90 p-1 rounded-xl text-[11px] font-semibold text-slate-600">
       <button onclick="switchView('recent')" id="tab-recent" class="py-2 rounded-lg bg-white text-indigo-600 shadow-sm text-center">Spends</button>
@@ -129,6 +146,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <!-- ==================== VIEW 2: COOK & HOUSE HELPER ==================== -->
     <div id="view-staff" class="hidden space-y-4">
+      <!-- Staff Total Balance Due Banner -->
+      <div class="bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl p-4 shadow-md flex items-center justify-between">
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-blue-100 font-semibold">Total Staff Balance Due</div>
+          <div class="text-2xl font-black mt-0.5 tracking-tight" id="lbl-total-staff-due">₹ 0.00</div>
+          <div class="text-[11px] text-blue-100 mt-0.5" id="lbl-staff-due-sub">Cook: ₹0 • House Helper: ₹0</div>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-xl text-white">
+          <i class="fa-solid fa-user-group"></i>
+        </div>
+      </div>
+
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-slate-800">Cook & House Help Salaries</h2>
@@ -156,6 +185,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     <!-- ==================== VIEW 3: DUAL MILKMEN TRACKER ==================== -->
     <div id="view-milk" class="hidden space-y-4">
+      <!-- Milk Total Balance Due Banner -->
+      <div class="bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-2xl p-4 shadow-md flex items-center justify-between">
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-amber-100 font-semibold">Total Milk Balance Due</div>
+          <div class="text-2xl font-black mt-0.5 tracking-tight" id="lbl-total-milk-due">₹ 0.00</div>
+          <div class="text-[11px] text-amber-100 mt-0.5" id="lbl-milk-due-sub">Sundar: ₹0 • Jain Mandir: ₹0</div>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center text-xl text-white">
+          <i class="fa-solid fa-bottle-water"></i>
+        </div>
+      </div>
+
       <div class="flex items-center justify-between">
         <div>
           <h2 class="text-sm font-bold text-slate-800">Sundar & Jain Mandir Milk Tracker</h2>
@@ -319,6 +360,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <label class="text-xs font-medium text-slate-600">Amount (₹) *</label>
         <input type="number" id="pay-staff-amount" class="w-full text-base font-bold p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none mt-1">
       </div>
+      <div>
+        <div class="flex justify-between items-center">
+          <label class="text-xs font-medium text-slate-600">Payment Date</label>
+          <div class="space-x-1">
+            <button type="button" onclick="setStaffPayDate('today')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-indigo-100 text-slate-700 font-medium">Today</button>
+            <button type="button" onclick="setStaffPayDate('yesterday')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-indigo-100 text-slate-700 font-medium">Yesterday</button>
+          </div>
+        </div>
+        <input type="date" id="pay-staff-date" class="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none mt-1">
+      </div>
       <div class="grid grid-cols-2 gap-2">
         <div>
           <label class="text-xs font-medium text-slate-600">Type</label>
@@ -356,7 +407,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
       <input type="hidden" id="milk-del-vendor-id">
       <div>
-        <label class="text-xs font-medium text-slate-600">Date</label>
+        <div class="flex justify-between items-center">
+          <label class="text-xs font-medium text-slate-600">Delivery Date</label>
+          <div class="space-x-1">
+            <button type="button" onclick="setMilkDate('today')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-indigo-100 text-slate-700 font-medium">Today</button>
+            <button type="button" onclick="setMilkDate('yesterday')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-indigo-100 text-slate-700 font-medium">Yesterday</button>
+          </div>
+        </div>
         <input type="date" id="milk-del-date" class="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none mt-1">
       </div>
       <div>
@@ -384,6 +441,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div>
         <label class="text-xs font-medium text-slate-600">Amount Paid (₹) *</label>
         <input type="number" id="pay-milk-amount" class="w-full text-base font-bold p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none mt-1">
+      </div>
+      <div>
+        <div class="flex justify-between items-center">
+          <label class="text-xs font-medium text-slate-600">Payment Date</label>
+          <div class="space-x-1">
+            <button type="button" onclick="setMilkPayDate('today')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-indigo-100 text-slate-700 font-medium">Today</button>
+            <button type="button" onclick="setMilkPayDate('yesterday')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-indigo-100 text-slate-700 font-medium">Yesterday</button>
+          </div>
+        </div>
+        <input type="date" id="pay-milk-date" class="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none mt-1">
       </div>
       <div>
         <label class="text-xs font-medium text-slate-600">Payment Mode</label>
@@ -468,6 +535,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div>
         <label class="text-xs font-medium text-slate-600">Merchant / Paid To *</label>
         <input type="text" id="new-merchant" placeholder="e.g. CultFit, Chai, Stationery" class="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none mt-1">
+      </div>
+      <div>
+        <div class="flex justify-between items-center">
+          <label class="text-xs font-medium text-slate-600">Date</label>
+          <div class="space-x-1">
+            <button type="button" onclick="setExpenseDate('today')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-indigo-100 text-slate-700 font-medium">Today</button>
+            <button type="button" onclick="setExpenseDate('yesterday')" class="text-[10px] px-2 py-0.5 rounded bg-slate-100 hover:bg-indigo-100 text-slate-700 font-medium">Yesterday</button>
+          </div>
+        </div>
+        <input type="date" id="new-date" class="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none mt-1">
       </div>
       <div>
         <label class="text-xs font-medium text-slate-600">Category</label>
@@ -601,6 +678,34 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         budgetDesc.textContent = 'No budget configured';
         budgetRem.textContent = '';
       }
+
+      if (document.getElementById('dash-total-pending')) {
+        const totalPending = (data.total_household_due || 0);
+        document.getElementById('dash-total-pending').textContent = `₹ ${totalPending.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+        document.getElementById('dash-total-pending').className = totalPending > 0 ? "text-base font-extrabold text-amber-700" : "text-base font-extrabold text-emerald-700";
+        document.getElementById('dash-pending-breakdown').textContent = `Milk: ₹${(data.total_milk_due || 0).toFixed(0)} • Staff: ₹${(data.total_staff_due || 0).toFixed(0)}`;
+      }
+    }
+
+    function setExpenseDate(day) {
+      const d = new Date();
+      if (day === 'yesterday') d.setDate(d.getDate() - 1);
+      document.getElementById('new-date').value = d.toISOString().slice(0, 10);
+    }
+    function setMilkDate(day) {
+      const d = new Date();
+      if (day === 'yesterday') d.setDate(d.getDate() - 1);
+      document.getElementById('milk-del-date').value = d.toISOString().slice(0, 10);
+    }
+    function setStaffPayDate(day) {
+      const d = new Date();
+      if (day === 'yesterday') d.setDate(d.getDate() - 1);
+      document.getElementById('pay-staff-date').value = d.toISOString().slice(0, 10);
+    }
+    function setMilkPayDate(day) {
+      const d = new Date();
+      if (day === 'yesterday') d.setDate(d.getDate() - 1);
+      document.getElementById('pay-milk-date').value = d.toISOString().slice(0, 10);
     }
 
     function escapeHtml(str) {
@@ -672,6 +777,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const res = await fetch('/api/staff/summary');
       const staffList = await res.json();
       const container = document.getElementById('staff-cards');
+
+      const totalStaffDue = staffList.reduce((acc, s) => acc + (s.balance_due || 0), 0);
+      if (document.getElementById('lbl-total-staff-due')) {
+        document.getElementById('lbl-total-staff-due').textContent = `₹ ${totalStaffDue.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+        document.getElementById('lbl-staff-due-sub').textContent = staffList.map(s => `${s.name}: ₹${s.balance_due.toFixed(0)}`).join(' • ') || 'All staff cleared';
+      }
 
       container.innerHTML = staffList.map(s => {
         const roleIcon = s.role === 'Cook' ? 'fa-kitchen-set text-amber-500' : 'fa-broom text-blue-500';
@@ -799,6 +910,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       document.getElementById('staff-pay-title').textContent = `Pay ${staffName}`;
       document.getElementById('pay-staff-type').value = defaultType;
       document.getElementById('pay-staff-amount').value = defaultAmt > 0 ? defaultAmt : '';
+      if (document.getElementById('pay-staff-date')) {
+        document.getElementById('pay-staff-date').value = new Date().toISOString().slice(0, 10);
+      }
       document.getElementById('staff-pay-modal').classList.remove('hidden');
     }
     function closeStaffPayModal() { document.getElementById('staff-pay-modal').classList.add('hidden'); }
@@ -809,6 +923,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const payment_type = document.getElementById('pay-staff-type').value;
       const payment_mode = document.getElementById('pay-staff-mode').value;
       const notes = document.getElementById('pay-staff-notes').value.trim();
+      const date = document.getElementById('pay-staff-date') ? document.getElementById('pay-staff-date').value : '';
 
       if (!amount || amount <= 0) {
         alert("Please enter a valid payment amount!");
@@ -818,7 +933,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       await fetch('/api/staff/pay', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({staff_id, amount, payment_type, payment_mode, notes})
+        body: JSON.stringify({staff_id, amount, payment_type, payment_mode, notes, date})
       });
 
       closeStaffPayModal();
@@ -847,6 +962,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       if (cachedVendors.length > 0) {
         monthLabel.textContent = cachedVendors[0].month_year;
+      }
+
+      const totalMilkDue = cachedVendors.reduce((acc, v) => acc + (v.balance_due || 0), 0);
+      if (document.getElementById('lbl-total-milk-due')) {
+        document.getElementById('lbl-total-milk-due').textContent = `₹ ${totalMilkDue.toLocaleString('en-IN', {minimumFractionDigits: 2})}`;
+        document.getElementById('lbl-milk-due-sub').textContent = cachedVendors.map(v => `${v.name}: ₹${v.balance_due.toFixed(0)}`).join(' • ') || 'All cleared';
       }
 
       container.innerHTML = cachedVendors.map(v => {
@@ -897,17 +1018,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </div>
 
             <!-- Quick Action Buttons -->
-            <div class="flex space-x-2 pt-1">
-              <button onclick="quickLogMilk(${v.vendor_id}, ${v.default_quantity})" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-xl transition shadow">
-                <i class="fa-solid fa-plus mr-1"></i> +${v.default_quantity}L Today
+            <div class="flex space-x-1.5 pt-1">
+              <button onclick="quickLogMilk(${v.vendor_id}, ${v.default_quantity}, 'today')" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold py-2 rounded-xl transition shadow">
+                +${v.default_quantity}L Today
               </button>
-              <button onclick="openMilkDeliveryModal(${v.vendor_id}, '${v.name}')" class="px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold py-2 rounded-xl transition">
-                <i class="fa-solid fa-calendar-day mr-1"></i> Custom L
+              <button onclick="quickLogMilk(${v.vendor_id}, ${v.default_quantity}, 'yesterday')" class="flex-1 bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-semibold py-2 rounded-xl transition shadow">
+                +${v.default_quantity}L Yest
               </button>
-              <button onclick="openMilkPayModal(${v.vendor_id}, '${v.name}', ${v.balance_due})" class="px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 rounded-xl transition shadow">
-                <i class="fa-solid fa-receipt mr-1"></i> Pay
+              <button onclick="openMilkDeliveryModal(${v.vendor_id}, '${v.name}')" class="px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold py-2 rounded-xl transition" title="Log Custom Liters or Date">
+                <i class="fa-solid fa-calendar-day"></i>
               </button>
-              <button onclick="openEditMilkVendorModal(${v.vendor_id}, '${v.name}', ${v.rate_per_liter}, ${v.previous_dues}, ${v.default_quantity})" class="px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold py-2 rounded-xl transition" title="Edit Price/L & Dues">
+              <button onclick="openMilkPayModal(${v.vendor_id}, '${v.name}', ${v.balance_due})" class="px-3 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold py-2 rounded-xl transition shadow">
+                Pay
+              </button>
+              <button onclick="openEditMilkVendorModal(${v.vendor_id}, '${v.name}', ${v.rate_per_liter}, ${v.previous_dues}, ${v.default_quantity})" class="px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-semibold py-2 rounded-xl transition" title="Edit Price/L & Dues">
                 <i class="fa-solid fa-pen"></i>
               </button>
             </div>
@@ -952,14 +1076,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       loadMilkData();
     }
 
-    async function quickLogMilk(vendorId, qty) {
+    async function quickLogMilk(vendorId, qty, day = 'today') {
+      let date = new Date().toISOString().slice(0, 10);
+      if (day === 'yesterday') {
+        const d = new Date();
+        d.setDate(d.getDate() - 1);
+        date = d.toISOString().slice(0, 10);
+      }
       await fetch('/api/milk/delivery', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({vendor_id: vendorId, quantity_liters: qty})
+        body: JSON.stringify({vendor_id: vendorId, quantity_liters: qty, date: date})
       });
-      showToast(`Recorded ${qty} Liters for today!`);
+      showToast(`Recorded ${qty}L for ${day === 'yesterday' ? 'yesterday' : 'today'}!`);
       loadMilkData();
+      loadStats();
     }
 
     function openMilkDeliveryModal(vendorId, name) {
@@ -997,6 +1128,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       document.getElementById('pay-milk-vendor-id').value = vendorId;
       document.getElementById('milk-pay-title').textContent = `Pay ${name}`;
       document.getElementById('pay-milk-amount').value = balanceDue > 0 ? balanceDue : '';
+      if (document.getElementById('pay-milk-date')) {
+        document.getElementById('pay-milk-date').value = new Date().toISOString().slice(0, 10);
+      }
       document.getElementById('milk-pay-modal').classList.remove('hidden');
     }
     function closeMilkPayModal() { document.getElementById('milk-pay-modal').classList.add('hidden'); }
@@ -1006,6 +1140,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const amount = parseFloat(document.getElementById('pay-milk-amount').value);
       const payment_mode = document.getElementById('pay-milk-mode').value;
       const notes = document.getElementById('pay-milk-notes').value.trim();
+      const date = document.getElementById('pay-milk-date') ? document.getElementById('pay-milk-date').value : '';
 
       if (!amount || amount <= 0) {
         alert("Please enter a valid amount!");
@@ -1015,7 +1150,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       await fetch('/api/milk/pay', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({vendor_id, amount, payment_mode, notes})
+        body: JSON.stringify({vendor_id, amount, payment_mode, notes, date})
       });
 
       closeMilkPayModal();
@@ -1161,6 +1296,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     // ----------------- GENERAL EXPENSE & CUSTOM CATEGORIES -----------------
     function openAddModal() { 
       document.getElementById('add-modal').classList.remove('hidden'); 
+      if (document.getElementById('new-date')) {
+        document.getElementById('new-date').value = new Date().toISOString().slice(0, 10);
+      }
       document.getElementById('new-amount').focus();
     }
     function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
@@ -1272,6 +1410,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
       const payment_mode = document.getElementById('new-mode').value;
       const notes = document.getElementById('new-notes').value.trim();
+      const date = document.getElementById('new-date') ? document.getElementById('new-date').value : '';
 
       if (!amount || amount <= 0 || !merchant) {
         alert("Please enter amount and description!");
@@ -1281,7 +1420,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       await fetch('/api/add-transaction', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({amount, merchant, category, payment_mode, notes})
+        body: JSON.stringify({amount, merchant, category, payment_mode, notes, date})
       });
 
       closeAddModal();
@@ -1348,6 +1487,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(HTML_TEMPLATE.encode('utf-8'))
         elif path == "/api/stats":
             stats = db.get_summary_statistics()
+            milk_sums = db.get_milk_monthly_summary()
+            staff_sums = db.get_staff_monthly_summary()
+            stats["total_milk_due"] = sum(v.get("balance_due", 0.0) for v in milk_sums)
+            stats["total_staff_due"] = sum(s.get("balance_due", 0.0) for s in staff_sums)
+            stats["total_household_due"] = stats["total_milk_due"] + stats["total_staff_due"]
             self._send_json(stats)
         elif path == "/api/transactions":
             q = query.get('q', [''])[0]
@@ -1404,12 +1548,16 @@ class RequestHandler(BaseHTTPRequestHandler):
         elif path == "/api/add-transaction":
             merchant = data.get("merchant", "Cash Expense").strip() or "Cash Expense"
             category = data.get("category", "Others").strip() or "Others"
+            date = data.get("date")
+            if date and len(date) == 10:
+                date = f"{date} {datetime.now().strftime('%H:%M:%S')}"
             txn_id = db.add_transaction(
                 amount=float(data.get("amount", 0)),
                 merchant=merchant,
                 category=category,
                 payment_mode=data.get("payment_mode", "Cash"),
                 notes=data.get("notes", ""),
+                date=date,
                 is_manual=1
             )
             if merchant and merchant != "Cash Expense" and category != "Others":

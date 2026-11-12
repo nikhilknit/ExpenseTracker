@@ -140,6 +140,53 @@ MDScreen:
                                 font_style: "Caption"
                                 theme_text_color: "Secondary"
 
+                        # Household Pending Balances Card
+                        MDCard:
+                            orientation: "vertical"
+                            padding: "14dp"
+                            spacing: "6dp"
+                            radius: [12, 12, 12, 12]
+                            elevation: 1
+                            size_hint_y: None
+                            height: "90dp"
+                            md_bg_color: 0.98, 0.95, 0.90, 1
+                            line_color: 0.9, 0.6, 0.2, 0.4
+
+                            MDBoxLayout:
+                                orientation: "horizontal"
+                                MDIcon:
+                                    icon: "cash-clock"
+                                    theme_text_color: "Custom"
+                                    text_color: 0.85, 0.45, 0.1, 1
+                                    size_hint_x: None
+                                    width: "28dp"
+                                MDLabel:
+                                    text: "Pending Balances to Pay"
+                                    font_style: "Subtitle2"
+                                    bold: True
+                                MDLabel:
+                                    id: lbl_dash_total_balance
+                                    text: "₹ 0.00"
+                                    font_style: "Subtitle1"
+                                    bold: True
+                                    halign: "right"
+                                    theme_text_color: "Custom"
+                                    text_color: 0.85, 0.2, 0.1, 1
+
+                            MDBoxLayout:
+                                orientation: "horizontal"
+                                MDLabel:
+                                    id: lbl_dash_milk_balance
+                                    text: "Milk: ₹ 0 Due"
+                                    font_style: "Caption"
+                                    theme_text_color: "Secondary"
+                                MDLabel:
+                                    id: lbl_dash_staff_balance
+                                    text: "Staff: ₹ 0 Due"
+                                    font_style: "Caption"
+                                    halign: "right"
+                                    theme_text_color: "Secondary"
+
                         # Quick Action Banner
                         MDCard:
                             orientation: "horizontal"
@@ -256,6 +303,44 @@ MDScreen:
                         spacing: "16dp"
                         adaptive_height: True
 
+                        # Total Staff Due Banner Card
+                        MDCard:
+                            orientation: "horizontal"
+                            padding: "14dp"
+                            spacing: "12dp"
+                            radius: [12, 12, 12, 12]
+                            size_hint_y: None
+                            height: "75dp"
+                            md_bg_color: 0.92, 0.95, 0.98, 1
+                            line_color: 0.2, 0.5, 0.8, 0.4
+
+                            MDIcon:
+                                icon: "account-cash-outline"
+                                theme_text_color: "Custom"
+                                text_color: 0.2, 0.45, 0.85, 1
+                                size_hint_x: None
+                                width: "32dp"
+                                pos_hint: {"center_y": 0.5}
+
+                            MDBoxLayout:
+                                orientation: "vertical"
+                                MDLabel:
+                                    text: "Total Staff Balance Due"
+                                    font_style: "Caption"
+                                    theme_text_color: "Secondary"
+                                MDLabel:
+                                    id: lbl_total_staff_balance
+                                    text: "₹ 0.00"
+                                    font_style: "H6"
+                                    bold: True
+                                    theme_text_color: "Custom"
+                                    text_color: 0.85, 0.2, 0.1, 1
+                                MDLabel:
+                                    id: lbl_staff_balance_breakdown
+                                    text: "Cook: ₹0 • House Helper: ₹0"
+                                    font_style: "Caption"
+                                    theme_text_color: "Secondary"
+
                         MDLabel:
                             text: "Monthly Salary & Dues"
                             font_style: "H6"
@@ -293,6 +378,44 @@ MDScreen:
                         padding: ["16dp", "16dp", "16dp", "80dp"]
                         spacing: "16dp"
                         adaptive_height: True
+
+                        # Total Milk Due Banner Card
+                        MDCard:
+                            orientation: "horizontal"
+                            padding: "14dp"
+                            spacing: "12dp"
+                            radius: [12, 12, 12, 12]
+                            size_hint_y: None
+                            height: "75dp"
+                            md_bg_color: 0.98, 0.93, 0.90, 1
+                            line_color: 0.9, 0.4, 0.2, 0.4
+
+                            MDIcon:
+                                icon: "bottle-wine-outline"
+                                theme_text_color: "Custom"
+                                text_color: 0.85, 0.35, 0.1, 1
+                                size_hint_x: None
+                                width: "32dp"
+                                pos_hint: {"center_y": 0.5}
+
+                            MDBoxLayout:
+                                orientation: "vertical"
+                                MDLabel:
+                                    text: "Total Milk Balance Due"
+                                    font_style: "Caption"
+                                    theme_text_color: "Secondary"
+                                MDLabel:
+                                    id: lbl_total_milk_balance
+                                    text: "₹ 0.00"
+                                    font_style: "H6"
+                                    bold: True
+                                    theme_text_color: "Custom"
+                                    text_color: 0.85, 0.2, 0.1, 1
+                                MDLabel:
+                                    id: lbl_milk_balance_breakdown
+                                    text: "Sundar: ₹0 • Jain Mandir: ₹0"
+                                    font_style: "Caption"
+                                    theme_text_color: "Secondary"
 
                         MDLabel:
                             text: "Milk Vendors (Monthly Bill & Dues)"

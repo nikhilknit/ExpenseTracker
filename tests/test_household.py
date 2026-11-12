@@ -141,6 +141,52 @@ class TestHouseholdAndMilkTracking(unittest.TestCase):
         self.assertEqual(sundar_sum['total_payable'], 430.0)
         self.assertEqual(sundar_sum['balance_due'], 430.0)
 
+    def test_yesterday_custom_milk_and_expense_logging(self):
+        from datetime import datetime, timedelta
+        yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        month_str = yesterday_str[:7]
+
+        vendors = self.db.get_milk_vendors()
+        sundar = [v for v in vendors if 'Sundar' in v['name']][0]
+
+        # Log 1 liter milk yesterday
+        del_id = self.db.log_milk_delivery(
+            vendor_id=sundar['id'],
+            date=yesterday_str,
+            quantity_liters=1.0,
+            notes="1 litre milk yesterday"
+        )
+        self.assertIsNotNone(del_id)
+
+        # Check delivery history
+        delivs = self.db.get_milk_deliveries(vendor_id=sundar['id'], month_year=month_str)
+        yest_deliv = [d for d in delivs if d['date'] == yesterday_str][0]
+        self.assertEqual(yest_deliv['quantity_liters'], 1.0)
+        self.assertEqual(yest_deliv['notes'], "1 litre milk yesterday")
+
+        # Check balance due
+        m_sums = self.db.get_milk_monthly_summary(month_year=month_str)
+        s_sum = [s for s in m_sums if s['vendor_id'] == sundar['id']][0]
+        expected_bill = 1.0 * sundar['rate_per_liter']
+        self.assertGreaterEqual(s_sum['balance_due'], expected_bill)
+
+        # Log custom expense for yesterday
+        txn_id = self.db.add_transaction(
+            amount=250.0,
+            merchant="Local Kirana",
+            category="Groceries",
+            payment_mode="Cash",
+            date=f"{yesterday_str} 14:30:00",
+            notes="Vegetables bought yesterday",
+            is_manual=1
+        )
+        self.assertIsNotNone(txn_id)
+
+        txns = self.db.get_transactions(limit=10, search_query="Local Kirana")
+        self.assertEqual(len(txns), 1)
+        self.assertEqual(txns[0]['amount'], 250.0)
+        self.assertTrue(txns[0]['date'].startswith(yesterday_str))
+
 
 if __name__ == "__main__":
     unittest.main()
