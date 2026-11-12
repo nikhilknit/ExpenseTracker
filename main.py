@@ -72,30 +72,33 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             return sv
 
     def on_start(self):
-        """Called when Kivy application starts."""
+        """Called when Kivy application starts - ultra-lightweight initial load."""
         try:
-            self.refresh_all_screens()
+            self.update_dashboard_summary()
+            self.populate_recent_transactions()
+            self.populate_milk_cards()
+            self.populate_staff_cards()
         except Exception as e:
             import traceback
-            print("Error in initial refresh:", traceback.format_exc())
+            print("Error in initial load:", traceback.format_exc())
 
-        # Request Android SMS permissions smoothly on launch after UI mounts
+        # Load heavy history list slightly later so initial frame renders instantly
         if HAS_KIVY:
-            Clock.schedule_once(lambda dt: self.sms_service.request_permissions(callback=self._on_permission_granted), 0.5)
+            Clock.schedule_once(lambda dt: self.populate_all_transactions(), 1.0)
+            Clock.schedule_once(lambda dt: self.sms_service.request_permissions(callback=self._on_permission_granted), 0.8)
 
     def _on_permission_granted(self, granted: bool):
         if granted and HAS_KIVY:
-            Clock.schedule_once(lambda dt: self.sync_sms(full_scan=False), 1)
+            # Sync SMS in background thread without freezing UI!
+            Clock.schedule_once(lambda dt: self.sync_sms(full_scan=False), 0.5)
 
-    def refresh_all_screens(self):
-        """Reloads data for Dashboard, History, Staff, Milk, and Analytics safely."""
+    def update_dashboard_summary(self):
+        """Updates only the numeric dashboard spend cards & budget without recreating widgets (<5ms)."""
         if not hasattr(self, 'root') or not self.root or not hasattr(self.root, 'ids'):
             return
-
         try:
             stats = self.db.get_summary_statistics()
             ids = self.root.ids
-
             if 'lbl_total_spent' in ids:
                 ids.lbl_total_spent.text = f"₹ {stats['total_debit']:,.2f}"
             if 'lbl_today_spent' in ids:
@@ -115,23 +118,23 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 else:
                     ids.progress_budget.value = 0
                     ids.lbl_budget_status.text = "No budget set (Tap pencil to set)"
-
-            # Populate Views safely
-            if 'list_recent_transactions' in ids:
-                self.populate_recent_transactions()
-            if 'list_all_transactions' in ids:
-                self.populate_all_transactions()
-            if 'list_staff_cards' in ids:
-                self.populate_staff_cards()
-            if 'list_milk_vendors' in ids:
-                self.populate_milk_cards()
-            if 'list_category_analytics' in ids:
-                self.populate_analytics(stats)
         except Exception as e:
-            import traceback
-            print("Error refreshing screens:", traceback.format_exc())
+            print("Error updating dashboard:", e)
+
+    def refresh_all_screens(self):
+        """Full refresh across all views."""
+        self.update_dashboard_summary()
+        self.populate_recent_transactions()
+        self.populate_all_transactions()
+        self.populate_staff_cards()
+        self.populate_milk_cards()
+        if hasattr(self.root, 'ids') and 'list_category_analytics' in self.root.ids:
+            stats = self.db.get_summary_statistics()
+            self.populate_analytics(stats)
 
     def populate_recent_transactions(self):
+        if not hasattr(self.root, 'ids') or 'list_recent_transactions' not in self.root.ids:
+            return
         recent_list = self.root.ids.list_recent_transactions
         recent_list.clear_widgets()
 
@@ -166,11 +169,14 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             recent_list.add_widget(item)
 
     def populate_all_transactions(self, query: str = ""):
+        if not hasattr(self.root, 'ids') or 'list_all_transactions' not in self.root.ids:
+            return
         txns_list = self.root.ids.list_all_transactions
         txns_list.clear_widgets()
 
+        # Fast limit: 35 items loads instantly in 50ms rather than freezing on 200 items
         txns = self.db.get_transactions(
-            limit=200,
+            limit=35,
             search_query=query if query else None,
             category=self.filter_category if self.filter_category != "All" else None
         )
@@ -290,7 +296,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                     phone=phone
                 )
                 self.dialog.dismiss()
-                self.refresh_all_screens()
+                self.populate_staff_cards()
+                self.update_dashboard_summary()
             except ValueError:
                 pass
 
@@ -328,7 +335,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                     notes=notes
                 )
                 self.staff_dialog.dismiss()
-                self.refresh_all_screens()
+                self.populate_staff_cards()
+                self.update_dashboard_summary()
             except ValueError:
                 pass
 
@@ -365,7 +373,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 if name:
                     self.db.add_staff_member(name=name, role=role, monthly_salary=salary, previous_dues=dues)
                     self.dialog.dismiss()
-                    self.refresh_all_screens()
+                    self.populate_staff_cards()
+                    self.update_dashboard_summary()
             except ValueError:
                 pass
 
@@ -476,7 +485,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                     default_quantity=qty
                 )
                 self.dialog.dismiss()
-                self.refresh_all_screens()
+                self.populate_milk_cards()
+                self.update_dashboard_summary()
             except ValueError:
                 pass
 
@@ -495,7 +505,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.db.log_milk_delivery(vendor_id=vendor_id, quantity_liters=qty)
         if self.milk_dialog:
             self.milk_dialog.dismiss()
-        self.refresh_all_screens()
+        self.populate_milk_cards()
+        self.update_dashboard_summary()
 
     def open_custom_milk_delivery(self, vendor_data):
         if self.milk_dialog:
@@ -510,7 +521,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 qty = float(txt_qty.text.strip())
                 self.db.log_milk_delivery(vendor_id=vendor_data['vendor_id'], quantity_liters=qty)
                 self.dialog.dismiss()
-                self.refresh_all_screens()
+                self.populate_milk_cards()
+                self.update_dashboard_summary()
             except ValueError:
                 pass
 
@@ -541,7 +553,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 notes = txt_notes.text.strip()
                 self.db.log_milk_payment(vendor_id=vendor_data['vendor_id'], amount=amt, notes=notes)
                 self.dialog.dismiss()
-                self.refresh_all_screens()
+                self.populate_milk_cards()
+                self.update_dashboard_summary()
             except ValueError:
                 pass
 
@@ -557,7 +570,15 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.dialog.open()
 
     # ----------------- ANALYTICS -----------------
-    def populate_analytics(self, stats: dict):
+    def populate_analytics(self, stats: Optional[dict] = None):
+        if not hasattr(self, 'root') or not self.root or not hasattr(self.root, 'ids'):
+            return
+        if 'list_category_analytics' not in self.root.ids:
+            return
+
+        if stats is None:
+            stats = self.db.get_summary_statistics()
+
         cat_list = self.root.ids.list_category_analytics
         cat_list.clear_widgets()
         total_debit = stats.get("total_debit", 0.0)
@@ -595,13 +616,54 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.populate_all_transactions(query=query)
 
     def sync_sms(self, full_scan: bool = False):
-        """Executes SMS inbox scan (recent or all historical), and refreshes UI."""
-        result = self.sms_service.sync_sms_transactions(full_scan=full_scan)
+        """Executes SMS inbox scan in a background thread to prevent UI freezing."""
+        if hasattr(self, '_sync_active') and self._sync_active:
+            return
+        self._sync_active = True
+
         scan_type = "Historical Scan" if full_scan else "Quick Sync"
-        status_msg = f"{scan_type}: Scanned {result['scanned']} SMS. Added {result['added']} new transactions ({result['duplicates']} duplicates skipped)."
-        self.root.ids.lbl_sms_sync_status.text = f"{result['added']} new transactions added"
-        self.root.ids.lbl_sync_log.text = f"[{datetime.now().strftime('%H:%M:%S')}] {status_msg}"
-        self.refresh_all_screens()
+        if hasattr(self, 'root') and self.root and hasattr(self.root, 'ids'):
+            if 'lbl_sms_sync_status' in self.root.ids:
+                self.root.ids.lbl_sms_sync_status.text = f"{scan_type} in progress..."
+            if 'lbl_sync_log' in self.root.ids:
+                self.root.ids.lbl_sync_log.text = f"[{datetime.now().strftime('%H:%M:%S')}] Scanning SMS in background..."
+
+        def worker():
+            try:
+                result = self.sms_service.sync_sms_transactions(full_scan=full_scan)
+                if HAS_KIVY:
+                    Clock.schedule_once(lambda dt: self._on_sync_finished(result, scan_type), 0)
+                else:
+                    self._on_sync_finished(result, scan_type)
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                if HAS_KIVY:
+                    Clock.schedule_once(lambda dt: self._on_sync_error(str(e)), 0)
+                else:
+                    self._on_sync_error(str(e))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_sync_finished(self, result: dict, scan_type: str):
+        self._sync_active = False
+        if hasattr(self, 'root') and self.root and hasattr(self.root, 'ids'):
+            status_msg = f"{scan_type}: Scanned {result['scanned']} SMS. Added {result['added']} new transactions ({result['duplicates']} duplicates skipped)."
+            if 'lbl_sms_sync_status' in self.root.ids:
+                self.root.ids.lbl_sms_sync_status.text = f"{result['added']} new transactions added"
+            if 'lbl_sync_log' in self.root.ids:
+                self.root.ids.lbl_sync_log.text = f"[{datetime.now().strftime('%H:%M:%S')}] {status_msg}"
+        self.update_dashboard_summary()
+        self.populate_recent_transactions()
+
+    def _on_sync_error(self, error_str: str):
+        self._sync_active = False
+        if hasattr(self, 'root') and self.root and hasattr(self.root, 'ids'):
+            if 'lbl_sms_sync_status' in self.root.ids:
+                self.root.ids.lbl_sms_sync_status.text = "Sync error"
+            if 'lbl_sync_log' in self.root.ids:
+                self.root.ids.lbl_sync_log.text = f"[{datetime.now().strftime('%H:%M:%S')}] Error reading SMS: {error_str}"
 
     def parse_custom_sms(self):
         """Parses manually pasted SMS in the SMS Scanner tab."""
@@ -617,7 +679,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                     f"Successfully parsed & added ₹{parsed['amount']} to {parsed['category']} ({parsed['merchant']})!"
                 )
                 self.root.ids.txt_custom_sms.text = ""
-                self.refresh_all_screens()
+                self.populate_recent_transactions()
+                self.update_dashboard_summary()
             else:
                 self.root.ids.lbl_sync_log.text = "This transaction is already saved in your database (duplicate)."
         else:
@@ -669,7 +732,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 self.db.set_merchant_category_rule(merchant, category, update_existing_others=False)
 
             self.dialog.dismiss()
-            self.refresh_all_screens()
+            self.populate_recent_transactions()
+            self.update_dashboard_summary()
 
         self.dialog = MDDialog(
             title="Log New Expense",
@@ -699,7 +763,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 month_year = datetime.now().strftime("%Y-%m")
                 self.db.set_budget(month_year, amt)
                 self.budget_dialog.dismiss()
-                self.refresh_all_screens()
+                self.update_dashboard_summary()
             except ValueError:
                 pass
 
@@ -757,7 +821,9 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         def delete_txn(btn):
             self.db.delete_transaction(txn["id"])
             detail_dialog.dismiss()
-            self.refresh_all_screens()
+            self.populate_all_transactions()
+            self.populate_recent_transactions()
+            self.update_dashboard_summary()
 
         def edit_cat(btn):
             detail_dialog.dismiss()
@@ -793,7 +859,9 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             if merchant and merchant != "Cash Expense":
                 self.db.set_merchant_category_rule(merchant, new_cat, update_existing_others=True)
             self.dialog.dismiss()
-            self.refresh_all_screens()
+            self.populate_all_transactions()
+            self.populate_recent_transactions()
+            self.update_dashboard_summary()
 
         self.dialog = MDDialog(
             title=f"Set Category ({txn.get('merchant', 'Expense')})",

@@ -45,6 +45,36 @@ class TestSMSParser(unittest.TestCase):
             if "expected_type" in item:
                 self.assertEqual(parsed["type"], item["expected_type"], f"Type mismatch in: {body}")
 
+    def test_indian_bank_real_sms_patterns(self):
+        """Tests real-world Indian bank transaction alerts that include OTP security warnings."""
+        sms_samples = [
+            ("Dear Customer, INR 350.00 debited from A/c **1234 on 12-Nov-26 towards SWIGGY. Do not share your OTP with anyone.", 350.0, "DEBIT", "Swiggy"),
+            ("Update: An amount of INR 1,250.00 has been debited from your A/c **4321 on 12-Nov-26 towards ZOMATO. Avl bal: INR 15,200.00. Do not share OTP.", 1250.0, "DEBIT", "Zomato"),
+            ("Sent Rs.320.00 from Kotak Bank AC X1234 to milkman@upi on 12-Nov-26. Ref 123456789. Never share your password/OTP.", 320.0, "DEBIT", "Milkman"),
+            ("ALERT: INR 450.00 debited from Axis Bank A/c no. XX1234 on 12-11-26 14:30:10 via UPI: 123456789:PhonePe. Bal: INR 12,000.00", 450.0, "DEBIT", "Phonepe"),
+            ("Dear SBI User, your A/C 1234 is debited by Rs.500.00 on 12Nov26 transfer to UPI/DR/123456/Swiggy. If not done by you, SMS BLOCK", 500.0, "DEBIT", "Swiggy"),
+            ("Rs.150 paid to Sundar Milk via UPI transaction ID 987654321.", 150.0, "DEBIT", "Sundar Milk"),
+        ]
+
+        for body, exp_amt, exp_type, exp_merchant in sms_samples:
+            self.assertTrue(SMSParser.is_transaction_sms(body), f"Should recognize as valid transaction: {body}")
+            parsed = SMSParser.parse(body, sender="BANK")
+            self.assertIsNotNone(parsed, f"Failed to parse: {body}")
+            self.assertEqual(parsed["amount"], exp_amt, f"Amount failed for {body}")
+            self.assertEqual(parsed["type"], exp_type, f"Type failed for {body}")
+            if exp_merchant:
+                self.assertEqual(parsed["merchant"], exp_merchant, f"Merchant failed for {body}")
+
+        # Verification that pure OTP authentication prompts are still strictly rejected
+        otp_samples = [
+            "123456 is your secret OTP for transaction of Rs 1500.00 at Amazon. Do not share this OTP with anyone.",
+            "OTP for transaction of Rs 200.00 is 987654. Valid for 10 mins.",
+            "Use OTP 432109 to complete payment of Rs 150.",
+            "Your one time password is 332211 for purchase of Rs 200. Do not disclose."
+        ]
+        for otp in otp_samples:
+            self.assertFalse(SMSParser.is_transaction_sms(otp), f"Should reject pure OTP auth prompt: {otp}")
+
     def test_database_integration(self):
         test_db_path = os.path.join(BASE_DIR, "test_expenses.db")
         if os.path.exists(test_db_path):

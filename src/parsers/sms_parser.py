@@ -10,30 +10,33 @@ class SMSParser:
     (HDFC, SBI, ICICI, Axis, Kotak, PNB, IndusInd, Paytm, PhonePe, CRED, etc.).
     """
 
-    # Common OTP / Promotional non-transactional patterns to ignore
-    OTP_PATTERNS = [
-        r'\botp\b',
-        r'one\s*time\s*password',
-        r'verification\s*code',
-        r'security\s*code',
-        r'do\s*not\s*share',
-        r'is\s*your\s*secret\s*otp',
-        r'mandate\s*created'
-    ]
+    # OTP / Authentication verification requests to ignore (distinguished from debit alerts with security warnings)
+    OTP_PROMPT_REGEX = re.compile(
+        r'\b(?:is\s+your\s+(?:secret\s+)?otp|otp\s+(?:for\s+.*?\s+)?is\s+[0-9]{4,8}|use\s+otp\s+[0-9]{4,8}|your\s+otp\s+(?:for\s+.*?\s+)?is\s+[0-9]{4,8}|one\s*time\s*password\s+is\s+[0-9]{4,8}|verification\s*code\s+is\s+[0-9]{4,8})\b',
+        re.IGNORECASE
+    )
 
-    # Amount extraction regex: matches Rs., INR, ₹ with optional commas and decimals
+    # Amount extraction regex: matches Rs., INR, ₹, Re with optional commas and decimals
     AMOUNT_REGEX = re.compile(
-        r'(?:rs\.?|inr|₹)\s*([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)',
+        r'(?:rs\.?|inr|₹|re\.?)\s*([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)',
+        re.IGNORECASE
+    )
+    AMOUNT_SUFFIX_REGEX = re.compile(
+        r'\b([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)\s*(?:rs\.?|inr|₹|re\.?)\b',
+        re.IGNORECASE
+    )
+    AMOUNT_VERB_REGEX = re.compile(
+        r'(?:debited\s+(?:by|for|with)|credited\s+(?:with|by)|spent|paid)\s+([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)',
         re.IGNORECASE
     )
 
     # Debit vs Credit keywords
     DEBIT_REGEX = re.compile(
-        r'\b(?:debited|debit|spent|paid|purchase|deducted|withdrawn|sent|transferred|txn\s+of)\b',
+        r'\b(?:debited|debit|spent|paid|purchase|deducted|withdrawn|sent|transferred|transfer\s+to|transfer\s+of|txn\s+of|payment\s+of|payment\s+to|payment\s+done|autopay|swiped|charged)\b',
         re.IGNORECASE
     )
     CREDIT_REGEX = re.compile(
-        r'\b(?:credited|credit|received|refund|refunded|deposited|cashback|salary)\b',
+        r'\b(?:credited|credit|received|refund|refunded|deposited|cashback|salary|deposit)\b',
         re.IGNORECASE
     )
 
@@ -45,20 +48,24 @@ class SMSParser:
 
     # Merchant extraction patterns
     MERCHANT_PATTERNS = [
-        # to VPA swiggy@icici or to VPA xyz
-        re.compile(r'(?:to\s+vpa|vpa)\s+([a-zA-Z0-9.\-_@]+)', re.IGNORECASE),
-        # at MERCHANT on/Bal/.
-        re.compile(r'\bat\s+([A-Za-z0-9\s&.\'-]+?)(?:\s+(?:on|via|using|avl|bal|ref|at|\.|\,)|$)', re.IGNORECASE),
-        # to MERCHANT on/via/ref/.
-        re.compile(r'\bto\s+([A-Za-z0-9\s&.\'-]+?)(?:\s+(?:on|via|using|avl|bal|ref|at|\.|\,)|$)', re.IGNORECASE),
-        # UPI/431298765432/Blinkit/
-        re.compile(r'upi\/(?:[0-9]+\/)?([a-zA-Z0-9\s&.\'-]+?)(?:\/|\.|\,|$|\s+bal)', re.IGNORECASE),
+        # UPI/DR/123456/Merchant or UPI/CR/123456/Merchant or UPI:123456:Merchant or UPI/123456/Merchant
+        re.compile(r'upi\s*[:\/\-]\s*(?:p2m\/|p2a\/|dr\/|cr\/)?(?:[0-9]+\s*[:\/\-]\s*)?([a-zA-Z0-9\s&\'-]+?)(?:[:\/\-.]|\s+bal|\s+avl|\s+ref|\s+on|\s+at|$)', re.IGNORECASE),
+        # to VPA or to UPI ID: to swiggy@icici or to milkman@upi or vpa xyz@okhdfc
+        re.compile(r'(?:to\s+vpa|vpa|to\s+upi|to)\s+([a-zA-Z0-9.\-_]+@[a-zA-Z0-9.\-_]+)', re.IGNORECASE),
+        # Paid Rs X to MERCHANT
+        re.compile(r'paid\s+(?:rs\.?|inr|₹|re\.?)?\s*[0-9.,]+\s+to\s+([A-Za-z0-9\s&\'-]+?)(?:\.|\,|\s+(?:for|on|via|using|ref)|$)', re.IGNORECASE),
+        # to MERCHANT on/via/ref/using/.
+        re.compile(r'\bto\s+([A-Za-z0-9\s&\'-]+?)(?:\.|\,|\s+(?:on|via|using|avl|bal|ref|at)|$)', re.IGNORECASE),
+        # at MERCHANT on/via/using
+        re.compile(r'\bat\s+([A-Za-z0-9\s&\'-]+?)(?:\.|\,|\s+(?:on|via|using|avl|bal|ref|at)|$)', re.IGNORECASE),
+        # towards MERCHANT
+        re.compile(r'\btowards\s+([A-Za-z0-9\s&\'-]+?)(?:\.|\,|\s+(?:on|via|using|avl|bal|ref|at)|$)', re.IGNORECASE),
         # Info: BIL*NETFLIX or Info: SWIGGY
         re.compile(r'info\s*:\s*([A-Za-z0-9*_\-\s]+?)(?:\.|\,|$|\s+avl|\s+available)', re.IGNORECASE),
         # transfer to MERCHANT
-        re.compile(r'transfer\s+to\s+([A-Za-z0-9\s&.\'-]+?)(?:\.|\,|$|\s+avl|\s+ref)', re.IGNORECASE),
-        # Paid Rs X to MERCHANT
-        re.compile(r'paid\s+(?:rs\.?|inr|₹)?\s*[0-9.,]+\s+to\s+([A-Za-z0-9\s&.\'-]+?)(?:\s+for|\s+on|\.|\,|$)', re.IGNORECASE)
+        re.compile(r'transfer\s+to\s+([A-Za-z0-9\s&\'-]+?)(?:\.|\,|\s+(?:avl|ref|on)|$)', re.IGNORECASE),
+        # spent on MERCHANT
+        re.compile(r'spent\s+on\s+([A-Za-z0-9\s&\'-]+?)(?:\.|\,|\s+(?:on|via|using|avl|bal|ref|at)|$)', re.IGNORECASE)
     ]
 
     # Date pattern matchers
@@ -75,20 +82,12 @@ class SMSParser:
         if not text or not isinstance(text, str):
             return False
 
-        lower_text = text.lower()
-
-        # If it's strictly an OTP message without transaction confirmation, ignore
-        for otp_pat in cls.OTP_PATTERNS:
-            if re.search(otp_pat, lower_text):
-                # Only ignore if it does not contain explicit "debited" or "spent"
-                if not (cls.DEBIT_REGEX.search(lower_text) or cls.CREDIT_REGEX.search(lower_text)):
-                    return False
-                # If it has "OTP for transaction of Rs...", that's still an unconfirmed auth OTP
-                if "is your otp" in lower_text or "do not share" in lower_text or "secret otp" in lower_text:
-                    return False
+        # If it's an explicit OTP authorization request, ignore
+        if cls.OTP_PROMPT_REGEX.search(text):
+            return False
 
         # Must have an amount
-        if not cls.AMOUNT_REGEX.search(text):
+        if not cls.extract_amount(text):
             return False
 
         # Must have debit or credit keyword
@@ -102,6 +101,10 @@ class SMSParser:
         """Extracts transaction monetary amount."""
         matches = cls.AMOUNT_REGEX.findall(text)
         if not matches:
+            matches = cls.AMOUNT_SUFFIX_REGEX.findall(text)
+        if not matches:
+            matches = cls.AMOUNT_VERB_REGEX.findall(text)
+        if not matches:
             return None
 
         # Clean commas and parse first valid amount
@@ -109,7 +112,6 @@ class SMSParser:
             try:
                 cleaned = match.replace(',', '').strip()
                 val = float(cleaned)
-                # Ignore amounts like 0.00 or unrealistic amounts
                 if val > 0:
                     return round(val, 2)
             except ValueError:
@@ -168,9 +170,9 @@ class SMSParser:
                 raw_merchant = re.sub(r'[@\-_].*$', '', raw_merchant)  # Clean UPI handles e.g. swiggy@icici -> swiggy
                 cleaned = raw_merchant.strip().strip('.').strip('-')
                 
-                # Check for validity
+                # Check for validity against common non-merchant stop words
                 if cleaned and len(cleaned) >= 2 and not cleaned.lower() in [
-                    "your", "account", "bank", "card", "vpa", "upi", "inr", "rs", "avl", "bal", "ref"
+                    "your", "account", "bank", "card", "vpa", "upi", "inr", "rs", "re", "avl", "bal", "ref", "dr", "cr", "sms", "block"
                 ]:
                     # Capitalize nicely
                     return cleaned.title()

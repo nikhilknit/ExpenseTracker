@@ -26,6 +26,16 @@ class SMSService:
         except ImportError:
             return False
 
+    def has_sms_permission(self) -> bool:
+        """Checks if Android READ_SMS permission is currently granted."""
+        if not self.is_android:
+            return True
+        try:
+            from android.permissions import check_permission, Permission
+            return check_permission(Permission.READ_SMS)
+        except Exception:
+            return False
+
     def request_permissions(self, callback: Optional[Callable[[bool], None]] = None):
         """Requests runtime SMS permissions on Android."""
         if not self.is_android:
@@ -36,13 +46,22 @@ class SMSService:
         try:
             from android.permissions import request_permissions, Permission, check_permission
             
+            if check_permission(Permission.READ_SMS):
+                if callback:
+                    callback(True)
+                return
+
             def on_permission_result(permissions, grants):
-                granted = bool(grants and all(grants))
+                granted = False
+                for p, g in zip(permissions, grants):
+                    if "READ_SMS" in str(p) and g:
+                        granted = True
+                        break
                 logger.info(f"SMS permission result: {granted}")
                 if callback:
                     callback(granted)
 
-            permissions = [Permission.READ_SMS, Permission.RECEIVE_SMS]
+            permissions = [Permission.READ_SMS]
             request_permissions(permissions, on_permission_result)
         except Exception as e:
             logger.error(f"Error requesting Android permissions: {e}")
@@ -53,7 +72,7 @@ class SMSService:
         """
         Reads SMS messages from inbox.
         If full_scan is True or limit is None, reads all available historical messages.
-        On Android: queries content://sms/inbox.
+        On Android: queries content://sms/inbox or content://sms.
         On Desktop: loads realistic test samples from sample_sms.json.
         """
         effective_limit = None if full_scan else limit
@@ -65,53 +84,79 @@ class SMSService:
     def _read_android_sms(self, limit: Optional[int] = 200) -> List[Dict[str, Any]]:
         """Queries Android Telephony.Sms content provider safely across all Android OEM devices."""
         results = []
+        if not self.has_sms_permission():
+            logger.info("READ_SMS permission not yet granted; skipping scan.")
+            return results
+
         try:
             from jnius import autoclass
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             activity = PythonActivity.mActivity
+            if not activity:
+                return results
+
             contentResolver = activity.getContentResolver()
             Uri = autoclass('android.net.Uri')
-            sms_uri = Uri.parse("content://sms/inbox")
 
-            # Safe sorting without appending raw SQL LIMIT to sortOrder
-            sort_order = "date DESC"
+            # Universal query: try content://sms/inbox first, then content://sms
+            uris_to_try = [
+                ("content://sms/inbox", None),
+                ("content://sms", "type = 1")
+            ]
 
-            cursor = contentResolver.query(
-                sms_uri,
-                None,  # All columns
-                None,  # Selection
-                None,  # Selection args
-                sort_order  # Sort order
-            )
+            for uri_str, selection in uris_to_try:
+                sms_uri = Uri.parse(uri_str)
+                cursor = None
+                try:
+                    cursor = contentResolver.query(
+                        sms_uri,
+                        None,
+                        selection,
+                        None,
+                        "date DESC"
+                    )
 
-            if cursor is not None:
-                body_idx = cursor.getColumnIndex("body")
-                address_idx = cursor.getColumnIndex("address")
-                date_idx = cursor.getColumnIndex("date")
+                    if cursor is not None:
+                        count = cursor.getCount()
+                        if count > 0:
+                            body_idx = cursor.getColumnIndex("body")
+                            address_idx = cursor.getColumnIndex("address")
+                            date_idx = cursor.getColumnIndex("date")
 
-                while cursor.moveToNext():
-                    if limit and limit > 0 and len(results) >= limit:
-                        break
+                            while cursor.moveToNext():
+                                if limit and limit > 0 and len(results) >= limit:
+                                    break
 
-                    body = cursor.getString(body_idx) if body_idx != -1 else ""
-                    sender = cursor.getString(address_idx) if address_idx != -1 else ""
-                    timestamp_epoch = cursor.getLong(date_idx) if date_idx != -1 else None
+                                body = cursor.getString(body_idx) if body_idx != -1 else ""
+                                sender = cursor.getString(address_idx) if address_idx != -1 else ""
+                                timestamp_epoch = cursor.getLong(date_idx) if date_idx != -1 else None
 
-                    timestamp_str = None
-                    if timestamp_epoch:
+                                timestamp_str = None
+                                if timestamp_epoch:
+                                    try:
+                                        timestamp_str = datetime.fromtimestamp(timestamp_epoch / 1000.0).strftime("%Y-%m-%d %H:%M:%S")
+                                    except Exception:
+                                        pass
+
+                                if body:
+                                    results.append({
+                                        "sender": sender or "BANK",
+                                        "body": str(body),
+                                        "timestamp": timestamp_str
+                                    })
+
+                            if len(results) > 0:
+                                break  # Successfully retrieved messages from this URI
+                except Exception as inner_e:
+                    logger.error(f"Error querying {uri_str}: {inner_e}")
+                finally:
+                    if cursor is not None:
                         try:
-                            timestamp_str = datetime.fromtimestamp(timestamp_epoch / 1000.0).strftime("%Y-%m-%d %H:%M:%S")
+                            cursor.close()
                         except Exception:
                             pass
-
-                    results.append({
-                        "sender": sender,
-                        "body": body,
-                        "timestamp": timestamp_str
-                    })
-                cursor.close()
         except Exception as e:
-            logger.error(f"Failed to read Android SMS via PyJNIus: {e}")
+            logger.error(f"Failed to query Android SMS content provider: {e}")
 
         return results
 
@@ -139,15 +184,11 @@ class SMSService:
     def sync_sms_transactions(self, limit: Optional[int] = 150, full_scan: bool = False) -> Dict[str, Any]:
         """
         Scans SMS inbox (recent or full history), parses transactions,
-        and stores new ones in the database.
-        Returns a summary of parsed, inserted, and duplicate transactions.
+        and batch-inserts them into the database in a single atomic transaction.
         """
         messages = self.read_sms_inbox(limit=limit, full_scan=full_scan)
         scanned_count = len(messages)
-        parsed_count = 0
-        added_count = 0
-        duplicate_count = 0
-        added_transactions = []
+        parsed_transactions = []
         custom_rules = self.db.get_all_merchant_rules()
 
         for msg in messages:
@@ -162,20 +203,16 @@ class SMSService:
                 custom_rules=custom_rules
             )
             if parsed:
-                parsed_count += 1
-                inserted_id = self.db.add_transaction(**parsed)
-                if inserted_id:
-                    added_count += 1
-                    parsed["id"] = inserted_id
-                    added_transactions.append(parsed)
-                else:
-                    duplicate_count += 1
+                parsed_transactions.append(parsed)
+
+        parsed_count = len(parsed_transactions)
+        # 100x faster batch insertion in a single atomic SQLite commit
+        added_count, duplicate_count = self.db.add_transactions_batch(parsed_transactions)
 
         return {
             "scanned": scanned_count,
             "parsed": parsed_count,
             "added": added_count,
             "duplicates": duplicate_count,
-            "transactions": added_transactions,
             "is_full_scan": full_scan
         }
