@@ -1,0 +1,78 @@
+[
+  {
+    "sender": "AD-HDFCBK",
+    "body": "Alert: Rs. 450.00 debited from HDFC Bank A/C ending 1234 to VPA swiggy@icici on 11-Nov-26 via UPI. Bal: Rs 15420.00",
+    "expected_amount": 450.0,
+    "expected_mode": "UPI",
+    "expected_category": "Food & Dining",
+    "expected_type": "DEBIT"
+  },
+  {
+    "sender": "VK-SBIINB",
+    "body": "Dear SBI User, your A/c ending 4567 debited by INR 350.00 on 11Nov26 by UPI txn to Zomato. Ref No 431200112233 -SBI",
+    "expected_amount": 350.0,
+    "expected_mode": "UPI",
+    "expected_category": "Food & Dining",
+    "expected_type": "DEBIT"
+  },
+  {
+    "sender": "VM-ICICIB",
+    "body": "ICICI Bank Card ending 4321 debited with INR 1,500.00 on 11-Nov-26 at SHELL PETROL PUMP. Avail Limit: INR 85,000.00.",
+    "expected_amount": 1500.0,
+    "expected_mode": "Credit Card",
+    "expected_category": "Travel & Commute",
+    "expected_type": "DEBIT"
+  },
+  {
+    "sender": "AX-AXISBK",
+    "body": "INR 180.00 debited from Axis Bank A/c no. XX5678 on 11-11-26 for UPI/431298765432/Blinkit. Avail Bal: INR 12,340.00",
+    "expected_amount": 180.0,
+    "expected_mode": "UPI",
+    "expected_category": "Groceries",
+    "expected_type": "DEBIT"
+  },
+  {
+    "sender": "AD-HDFCBK",
+    "body": "Rs. 2,499.00 spent on HDFC Bank Card ending 8765 on 10-Nov-26 at AMAZON INDIA. Bal Limit: Rs 140000.",
+    "expected_amount": 2499.0,
+    "expected_mode": "Credit Card",
+    "expected_category": "Shopping",
+    "expected_type": "DEBIT"
+  },
+  {
+    "sender": "VM-ICICIB",
+    "body": "Dear Customer, your Acct XX123 is debited with INR 299.00 on 11-Nov-26. Info: BIL*NETFLIX. Available Balance is INR 25,000.00.",
+    "expected_amount": 299.0,
+    "expected_mode": "UPI",
+    "expected_category": "Entertainment",
+    "expected_type": "DEBIT"
+  },
+  {
+    "sender": "BZ-PAYTM",
+    "body": "Paid Rs. 85 to Ramesh General Store for order on Paytm. Txn ID: 20261111123456",
+    "expected_amount": 85.0,
+    "expected_mode": "UPI",
+    "expected_category": "Others",
+    "expected_type": "DEBIT"
+  },
+  {
+    "sender": "VK-SBIINB",
+    "body": "Your A/C 9876 debited by Rs.1200.00 on 10-11-2026 transfer to Uber India. Avl Bal Rs: 5432.10 -SBI",
+    "expected_amount": 1200.0,
+    "expected_mode": "UPI",
+    "expected_category": "Travel & Commute",
+    "expected_type": "DEBIT"
+  },
+  {
+    "sender": "AD-HDFCBK",
+    "body": "Refund of Rs. 450.00 credited to your HDFC Bank A/c ending 1234 on 11-Nov-26 from Swiggy.",
+    "expected_amount": 450.0,
+    "expected_category": "Food & Dining",
+    "expected_type": "CREDIT"
+  },
+  {
+    "sender": "AD-HDFCBK",
+    "body": "459021 is your secret OTP for transaction of Rs 1500.00 at Amazon. Do not share this OTP with anyone.",
+    "is_otp": true
+  }
+]
