@@ -37,12 +37,12 @@ KV_STRING = '''
 <RightLabel@MDLabel>:
 
 MDScreen:
-    md_bg_color: app.theme_cls.bg_normal
+    md_bg_color: 0.96, 0.97, 0.99, 1
 
     MDBottomNavigation:
         id: bottom_nav
-        panel_color: app.theme_cls.bg_dark
-        selected_color_background: 0, 0, 0, 0
+        panel_color: 1, 1, 1, 1
+        selected_color_background: 0.91, 0.93, 0.98, 1
         text_color_active: app.theme_cls.primary_color
 
         # ---------------- 1. DASHBOARD TAB ----------------
@@ -73,8 +73,8 @@ MDScreen:
                             radius: [12, 12, 12, 12]
                             size_hint_y: None
                             height: "46dp"
-                            elevation: 1
-                            md_bg_color: 0.95, 0.95, 0.98, 1
+                            elevation: 0
+                            md_bg_color: 1, 1, 1, 1
 
                             MDIconButton:
                                 icon: "chevron-left"
@@ -105,10 +105,10 @@ MDScreen:
                             padding: "16dp"
                             spacing: "8dp"
                             radius: [16, 16, 16, 16]
-                            elevation: 3
+                            elevation: 2
                             size_hint_y: None
                             height: "140dp"
-                            md_bg_color: app.theme_cls.primary_color
+                            md_bg_color: 0.15, 0.20, 0.39, 1
 
                             MDLabel:
                                 id: lbl_spend_period_title
@@ -149,7 +149,8 @@ MDScreen:
                             elevation: 1
                             size_hint_y: None
                             height: "105dp"
-                            line_color: 0.8, 0.8, 0.8, 0.3
+                            md_bg_color: 1, 1, 1, 1
+                            line_color: 0.88, 0.90, 0.94, 1
 
                             MDBoxLayout:
                                 orientation: "horizontal"
@@ -183,8 +184,8 @@ MDScreen:
                             elevation: 1
                             size_hint_y: None
                             height: "90dp"
-                            md_bg_color: 0.98, 0.95, 0.90, 1
-                            line_color: 0.9, 0.6, 0.2, 0.4
+                            md_bg_color: 1, 0.98, 0.94, 1
+                            line_color: 0.94, 0.80, 0.57, 1
 
                             MDBoxLayout:
                                 orientation: "horizontal"
@@ -228,9 +229,9 @@ MDScreen:
                             spacing: "12dp"
                             radius: [12, 12, 12, 12]
                             size_hint_y: None
-                            height: "70dp"
-                            md_bg_color: 0.15, 0.65, 0.45, 0.12
-                            line_color: 0.15, 0.65, 0.45, 0.3
+                            height: "78dp"
+                            md_bg_color: 1, 1, 1, 1
+                            line_color: 0.82, 0.91, 0.87, 1
 
                             MDIcon:
                                 icon: "message-processing-outline"
@@ -243,20 +244,20 @@ MDScreen:
                             MDBoxLayout:
                                 orientation: "vertical"
                                 MDLabel:
-                                    text: "Auto SMS Tracker"
+                                    text: "Bank SMS import"
                                     bold: True
                                     font_style: "Subtitle2"
                                 MDLabel:
                                     id: lbl_sms_sync_status
-                                    text: "Scan all past & new UPI/Bank alerts"
+                                    text: "Import transaction alerts from your inbox"
                                     font_style: "Caption"
                                     theme_text_color: "Secondary"
 
                             MDRaisedButton:
-                                text: "Scan All"
+                                text: "Scan inbox"
                                 md_bg_color: 0.15, 0.65, 0.45, 1
                                 size_hint_x: None
-                                width: "80dp"
+                                width: "100dp"
                                 pos_hint: {"center_y": 0.5}
                                 on_release: app.sync_sms(True)
 
@@ -572,17 +573,18 @@ MDScreen:
                             orientation: "vertical"
                             padding: "16dp"
                             spacing: "10dp"
-                            radius: [12, 12, 12, 12]
+                            radius: [16, 16, 16, 16]
                             adaptive_height: True
-                            line_color: 0.8, 0.8, 0.8, 0.3
+                            md_bg_color: 1, 1, 1, 1
+                            line_color: 0.88, 0.90, 0.94, 1
 
                             MDLabel:
-                                text: "Scan Existing Phone SMS"
+                                text: "Import bank transactions"
                                 font_style: "Subtitle1"
                                 bold: True
 
                             MDLabel:
-                                text: "Reads all existing bank & UPI transaction SMS alerts on your phone. Duplicate messages are automatically filtered."
+                                text: "Scan recent alerts or import your full inbox history. Existing transactions are automatically skipped."
                                 font_style: "Body2"
                                 theme_text_color: "Secondary"
 

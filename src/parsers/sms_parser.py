@@ -29,14 +29,14 @@ class SMSParser:
         r'(?:debited\s+(?:by|for|with)|credited\s+(?:with|by)|spent|paid)\s+([0-9]+(?:,[0-9]{2,3})*(?:\.[0-9]{1,2})?)',
         re.IGNORECASE
     )
-
-    # Debit vs Credit keywords
-    DEBIT_REGEX = re.compile(
-        r'\b(?:debited|debit|spent|paid|purchase|deducted|withdrawn|sent|transferred|transfer\s+to|transfer\s+of|txn\s+of|payment\s+of|payment\s+to|payment\s+done|autopay|swiped|charged)\b',
+    ACTION_CUE_REGEX = re.compile(
+        r'\b(?P<credit>credited|credit(?!\s+card)|received|refund(?:ed)?|deposited|cashback|salary|deposit)\b'
+        r'|\b(?P<debit>debited|debit|spent|paid|purchase|deducted|withdrawn|sent|transferred|'
+        r'transfer\s+(?:to|of)|txn\s+of|payment\s+(?:of|to|done)|autopay|swiped|charged)\b',
         re.IGNORECASE
     )
-    CREDIT_REGEX = re.compile(
-        r'\b(?:credited|credit|received|refund|refunded|deposited|cashback|salary|deposit)\b',
+    BALANCE_CONTEXT_REGEX = re.compile(
+        r'\b(?:available|avail|avl|closing|current|account|a/c)?\s*(?:balance|bal|limit|lmt|due)\b',
         re.IGNORECASE
     )
 
@@ -90,41 +90,65 @@ class SMSParser:
         if not cls.extract_amount(text):
             return False
 
-        # Must have debit or credit keyword
-        has_debit = bool(cls.DEBIT_REGEX.search(text))
-        has_credit = bool(cls.CREDIT_REGEX.search(text))
+        # Ignore mentions of "credit card" unless there is a transaction action.
+        return bool(cls.ACTION_CUE_REGEX.search(text))
 
-        return has_debit or has_credit
+    @classmethod
+    def _find_amount_candidate(cls, text: str) -> Optional[Tuple[int, int, float, int]]:
+        candidates = []
+        patterns = (
+            (cls.AMOUNT_REGEX, 0),
+            (cls.AMOUNT_SUFFIX_REGEX, 0),
+            (cls.AMOUNT_VERB_REGEX, 1),
+        )
+        for pattern, priority in patterns:
+            for match in pattern.finditer(text):
+                try:
+                    value = float(match.group(1).replace(',', '').strip())
+                except ValueError:
+                    continue
+                if value > 0:
+                    candidates.append((match.start(1), match.end(1), value, priority))
+
+        cues = list(cls.ACTION_CUE_REGEX.finditer(text))
+
+        def candidate_score(candidate):
+            start, end, _, priority = candidate
+            midpoint = (start + end) / 2
+            cue_distance = min(
+                (max(cue.start() - midpoint, midpoint - cue.end(), 0) for cue in cues),
+                default=float("inf")
+            )
+            context_start = max(0, start - 36)
+            balance_context = cls.BALANCE_CONTEXT_REGEX.search(text[context_start:start])
+            return (cue_distance + (1000 if balance_context else 0), priority)
+
+        return min(candidates, key=candidate_score) if candidates else None
 
     @classmethod
     def extract_amount(cls, text: str) -> Optional[float]:
-        """Extracts transaction monetary amount."""
-        matches = cls.AMOUNT_REGEX.findall(text)
-        if not matches:
-            matches = cls.AMOUNT_SUFFIX_REGEX.findall(text)
-        if not matches:
-            matches = cls.AMOUNT_VERB_REGEX.findall(text)
-        if not matches:
-            return None
-
-        # Clean commas and parse first valid amount
-        for match in matches:
-            try:
-                cleaned = match.replace(',', '').strip()
-                val = float(cleaned)
-                if val > 0:
-                    return round(val, 2)
-            except ValueError:
-                continue
-        return None
+        """Extracts the amount closest to a transaction action, not an account balance."""
+        candidate = cls._find_amount_candidate(text)
+        return round(candidate[2], 2) if candidate else None
 
     @classmethod
     def extract_type(cls, text: str) -> str:
         """Determines if transaction is DEBIT or CREDIT."""
-        lower_text = text.lower()
-        if cls.CREDIT_REGEX.search(lower_text) and not ("debited" in lower_text and "refund" not in lower_text):
-            return "CREDIT"
-        return "DEBIT"
+        amount_candidate = cls._find_amount_candidate(text)
+        reference_position = amount_candidate[0] if amount_candidate else 0
+        cues = list(cls.ACTION_CUE_REGEX.finditer(text))
+        if not cues:
+            return "DEBIT"
+
+        nearest_cue = min(
+            cues,
+            key=lambda cue: max(
+                cue.start() - reference_position,
+                reference_position - cue.end(),
+                0
+            )
+        )
+        return "CREDIT" if nearest_cue.group("credit") else "DEBIT"
 
     @classmethod
     def extract_payment_mode(cls, text: str) -> str:

@@ -75,6 +75,32 @@ class TestSMSParser(unittest.TestCase):
         for otp in otp_samples:
             self.assertFalse(SMSParser.is_transaction_sms(otp), f"Should reject pure OTP auth prompt: {otp}")
 
+    def test_amount_and_type_are_tied_to_transaction_action(self):
+        debit_with_balance_before_amount = (
+            "Available balance INR 9,500.00. INR 125.00 debited from your account."
+        )
+        parsed_debit = SMSParser.parse(debit_with_balance_before_amount)
+        self.assertIsNotNone(parsed_debit)
+        self.assertEqual(parsed_debit["amount"], 125.0)
+        self.assertEqual(parsed_debit["type"], "DEBIT")
+
+        credit_with_balance_after_amount = (
+            "Rs. 2,800.00 received in your account. New balance Rs. 12,000.00."
+        )
+        parsed_credit = SMSParser.parse(credit_with_balance_after_amount)
+        self.assertIsNotNone(parsed_credit)
+        self.assertEqual(parsed_credit["amount"], 2800.0)
+        self.assertEqual(parsed_credit["type"], "CREDIT")
+
+        parsed_refund = SMSParser.parse(
+            "Rs. 100.00 credited to your account as a refund for an earlier debit."
+        )
+        self.assertIsNotNone(parsed_refund)
+        self.assertEqual(parsed_refund["type"], "CREDIT")
+        self.assertFalse(
+            SMSParser.is_transaction_sms("Credit card available balance is Rs. 12,000.00.")
+        )
+
     def test_database_integration(self):
         test_db_path = os.path.join(BASE_DIR, "test_expenses.db")
         if os.path.exists(test_db_path):

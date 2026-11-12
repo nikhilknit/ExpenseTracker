@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 
@@ -1172,7 +1173,7 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
         self.populate_all_transactions(query=query)
 
     def sync_sms(self, full_scan: bool = False):
-        """Executes SMS inbox scan safely on main thread via Clock without threading JNI crash."""
+        """Scans SMS in the background so historical imports do not freeze the UI."""
         if hasattr(self, '_sync_active') and self._sync_active:
             return
         self._sync_active = True
@@ -1184,18 +1185,25 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
             if 'lbl_sync_log' in self.root.ids:
                 self.root.ids.lbl_sync_log.text = f"[{datetime.now().strftime('%H:%M:%S')}] Scanning SMS..."
 
-        def do_sync(dt=None):
+        def do_sync():
             try:
                 limit = None if full_scan else 100
                 result = self.sms_service.sync_sms_transactions(limit=limit, full_scan=full_scan)
-                self._on_sync_finished(result, scan_type)
+                if HAS_KIVY:
+                    Clock.schedule_once(lambda dt: self._on_sync_finished(result, scan_type), 0)
+                else:
+                    self._on_sync_finished(result, scan_type)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self._on_sync_error(str(e))
+                error = str(e)
+                if HAS_KIVY:
+                    Clock.schedule_once(lambda dt: self._on_sync_error(error), 0)
+                else:
+                    self._on_sync_error(error)
 
         if HAS_KIVY:
-            Clock.schedule_once(do_sync, 0.1)
+            threading.Thread(target=do_sync, daemon=True).start()
         else:
             do_sync()
 
@@ -1209,6 +1217,8 @@ class ExpenseTrackerApp(MDApp if HAS_KIVY else object):
                 self.root.ids.lbl_sync_log.text = f"[{datetime.now().strftime('%H:%M:%S')}] {status_msg}"
         self.update_dashboard_summary()
         self.populate_recent_transactions()
+        self.populate_all_transactions()
+        self.populate_analytics()
 
     def _on_sync_error(self, error_str: str):
         self._sync_active = False

@@ -10,7 +10,8 @@ A 100% Python-powered personal finance and expense tracking Android application.
    - Auto-scans incoming bank alerts and transaction SMS messages.
    - **Scan All Existing SMS**: A single button scans your phone's entire historical SMS inbox to import months of past UPI, card, and bank expenses.
    - Supports **HDFC, SBI, ICICI, Axis, Kotak, PNB, Paytm, PhonePe, Google Pay, CRED, Amazon Pay**, and more.
-   - Accurately parses: **Amount**, **Merchant / Payee**, **Payment Mode** (UPI vs Card), **Account / Card Number**, and **Timestamp**.
+   - Parses the transaction amount near debit/credit action text (rather than a later balance), plus **Merchant / Payee**, **Payment Mode** (UPI vs Card), **Account / Card Number**, and **Timestamp**.
+   - Runs inbox scans in the background so importing older SMS history does not freeze the interface.
    - Filters out non-transactional messages (OTPs, promo alerts, security notices).
    - **Smart Deduplication**: Uses deterministic SHA-256 hashes to ensure identical SMS alerts are never added twice.
 

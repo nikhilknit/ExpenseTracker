@@ -95,10 +95,10 @@ class SMSService:
             if not activity:
                 return results
 
-            contentResolver = activity.getContentResolver()
+            content_resolver = activity.getContentResolver()
             Uri = autoclass('android.net.Uri')
 
-            # Universal query: try content://sms/inbox first, then content://sms
+            # Prefer the inbox URI, with a filtered provider URI as an OEM fallback.
             uris_to_try = [
                 ("content://sms/inbox", None),
                 ("content://sms", "type = 1")
@@ -108,7 +108,7 @@ class SMSService:
                 sms_uri = Uri.parse(uri_str)
                 cursor = None
                 try:
-                    cursor = contentResolver.query(
+                    cursor = content_resolver.query(
                         sms_uri,
                         None,
                         selection,
@@ -116,45 +116,43 @@ class SMSService:
                         "date DESC"
                     )
 
-                    if cursor is not None:
-                        count = cursor.getCount()
-                        if count > 0:
-                            body_idx = cursor.getColumnIndex("body")
-                            address_idx = cursor.getColumnIndex("address")
-                            date_idx = cursor.getColumnIndex("date")
+                    if cursor is not None and cursor.getCount() > 0:
+                        body_idx = cursor.getColumnIndex("body")
+                        address_idx = cursor.getColumnIndex("address")
+                        date_idx = cursor.getColumnIndex("date")
 
-                            while cursor.moveToNext():
-                                if limit and limit > 0 and len(results) >= limit:
-                                    break
+                        while cursor.moveToNext():
+                            if limit and limit > 0 and len(results) >= limit:
+                                break
 
-                                body = cursor.getString(body_idx) if body_idx != -1 else ""
-                                sender = cursor.getString(address_idx) if address_idx != -1 else ""
-                                timestamp_epoch = cursor.getLong(date_idx) if date_idx != -1 else None
+                            body = cursor.getString(body_idx) if body_idx != -1 else ""
+                            sender = cursor.getString(address_idx) if address_idx != -1 else ""
+                            timestamp_epoch = cursor.getLong(date_idx) if date_idx != -1 else None
 
-                                timestamp_str = None
-                                if timestamp_epoch:
-                                    try:
-                                        timestamp_str = datetime.fromtimestamp(timestamp_epoch / 1000.0).strftime("%Y-%m-%d %H:%M:%S")
-                                    except Exception:
-                                        pass
+                            timestamp_str = None
+                            if timestamp_epoch:
+                                try:
+                                    timestamp_str = datetime.fromtimestamp(timestamp_epoch / 1000.0).strftime("%Y-%m-%d %H:%M:%S")
+                                except (OverflowError, OSError, ValueError):
+                                    logger.warning("Ignoring invalid SMS timestamp: %s", timestamp_epoch)
 
-                                if body:
-                                    results.append({
-                                        "sender": sender or "BANK",
-                                        "body": str(body),
-                                        "timestamp": timestamp_str
-                                    })
+                            if body:
+                                results.append({
+                                    "sender": sender or "BANK",
+                                    "body": str(body),
+                                    "timestamp": timestamp_str
+                                })
 
-                            if len(results) > 0:
-                                break  # Successfully retrieved messages from this URI
+                        if results:
+                            break
                 except Exception as inner_e:
-                    logger.error(f"Error querying {uri_str}: {inner_e}")
+                    logger.error("Error querying %s: %s", uri_str, inner_e)
                 finally:
                     if cursor is not None:
                         try:
                             cursor.close()
-                        except Exception:
-                            pass
+                        except Exception as close_error:
+                            logger.warning("Error closing SMS cursor for %s: %s", uri_str, close_error)
         except Exception as e:
             logger.error(f"Failed to query Android SMS content provider: {e}")
 
