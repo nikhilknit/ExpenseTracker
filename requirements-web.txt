@@ -1,0 +1,10 @@
+# Web Application Requirements
+# web_preview.py runs entirely on Python's built-in standard library:
+# - http.server
+# - sqlite3
+# - json
+# - re
+# - datetime
+# - urllib
+# - hashlib
+# Zero external packages required for cloud deployment.

@@ -1131,3 +1131,147 @@ class DatabaseManager:
             cursor.execute("DELETE FROM milk_payments WHERE id = ?", (payment_id,))
             conn.commit()
             return cursor.rowcount > 0
+
+    def export_all_data(self) -> Dict[str, Any]:
+        """Exports all tables into a clean JSON-serializable dictionary for backup/transfer."""
+        tables = [
+            "transactions", "budgets", "category_budgets",
+            "household_staff", "staff_payments",
+            "milk_vendors", "milk_deliveries", "milk_payments",
+            "merchant_category_rules"
+        ]
+        backup = {
+            "version": "1.0",
+            "exported_at": datetime.now().isoformat(),
+            "data": {}
+        }
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            for tbl in tables:
+                try:
+                    cursor.execute(f"SELECT * FROM {tbl}")
+                    backup["data"][tbl] = [dict(r) for r in cursor.fetchall()]
+                except Exception:
+                    backup["data"][tbl] = []
+        return backup
+
+    def import_all_data(self, backup: Dict[str, Any]) -> Dict[str, int]:
+        """Restores data from a backup dictionary with smart deduplication."""
+        counts = {"transactions": 0, "milk_deliveries": 0, "staff_payments": 0}
+        if not isinstance(backup, dict):
+            return counts
+        data = backup.get("data") if "data" in backup and isinstance(backup["data"], dict) else backup
+        if not data:
+            return counts
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Import transactions
+            for txn in data.get("transactions", []):
+                try:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO transactions 
+                        (type, amount, category, payment_mode, account_or_card, merchant, date, notes, raw_sms, sms_hash, is_manual)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        txn.get("type", "DEBIT"),
+                        float(txn.get("amount", 0)),
+                        txn.get("category", "Others"),
+                        txn.get("payment_mode", "UPI"),
+                        txn.get("account_or_card"),
+                        txn.get("merchant"),
+                        txn.get("date"),
+                        txn.get("notes"),
+                        txn.get("raw_sms"),
+                        txn.get("sms_hash"),
+                        txn.get("is_manual", 0)
+                    ))
+                    if cursor.rowcount > 0:
+                        counts["transactions"] += 1
+                except Exception:
+                    pass
+
+            # Import milk deliveries
+            for d in data.get("milk_deliveries", []):
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO milk_deliveries
+                        (vendor_id, date, quantity_liters, rate_at_delivery, shift, notes)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        int(d.get("vendor_id", 1)),
+                        d.get("date"),
+                        float(d.get("quantity_liters", 1.0)),
+                        float(d.get("rate_at_delivery", 60.0)),
+                        d.get("shift", "Daily"),
+                        d.get("notes", "")
+                    ))
+                    if cursor.rowcount > 0:
+                        counts["milk_deliveries"] += 1
+                except Exception:
+                    pass
+
+            # Import milk payments
+            for p in data.get("milk_payments", []):
+                try:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO milk_payments
+                        (vendor_id, amount, date, month_for, payment_mode, notes, transaction_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        int(p.get("vendor_id", 1)),
+                        float(p.get("amount", 0)),
+                        p.get("date"),
+                        p.get("month_for"),
+                        p.get("payment_mode", "UPI"),
+                        p.get("notes", ""),
+                        p.get("transaction_id")
+                    ))
+                except Exception:
+                    pass
+
+            # Import budgets
+            for b in data.get("budgets", []):
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO budgets (month_year, total_budget)
+                        VALUES (?, ?)
+                    """, (b.get("month_year"), float(b.get("total_budget", 0))))
+                except Exception:
+                    pass
+
+            # Import merchant rules
+            for r in data.get("merchant_category_rules", []):
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO merchant_category_rules (merchant_pattern, category)
+                        VALUES (?, ?)
+                    """, (r.get("merchant_pattern"), r.get("category")))
+                except Exception:
+                    pass
+
+            # Import staff payments
+            for sp in data.get("staff_payments", []):
+                try:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO staff_payments
+                        (staff_id, amount, date, month_for, payment_mode, payment_type, notes, transaction_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        int(sp.get("staff_id", 1)),
+                        float(sp.get("amount", 0)),
+                        sp.get("date"),
+                        sp.get("month_for"),
+                        sp.get("payment_mode", "Cash"),
+                        sp.get("payment_type", "Salary"),
+                        sp.get("notes", ""),
+                        sp.get("transaction_id")
+                    ))
+                    if cursor.rowcount > 0:
+                        counts["staff_payments"] += 1
+                except Exception:
+                    pass
+
+            conn.commit()
+        return counts

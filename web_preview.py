@@ -22,6 +22,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Smart Expense & Household Tracker</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Expense Tracker">
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script>
@@ -47,13 +53,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <h1 class="text-lg font-bold tracking-tight">Expense Tracker</h1>
       </div>
       <div class="flex items-center space-x-1.5">
+        <button onclick="openBackupModal()" title="Backup & Restore Data" class="bg-indigo-700/90 hover:bg-indigo-800 text-white text-xs px-2.5 py-1.5 rounded-lg flex items-center space-x-1 shadow transition">
+          <i class="fa-solid fa-cloud-arrow-down text-[11px]"></i>
+          <span>Backup</span>
+        </button>
         <button onclick="syncSMS(false)" title="Quick SMS Sync" class="bg-indigo-700 hover:bg-indigo-800 text-white text-xs px-2.5 py-1.5 rounded-lg flex items-center space-x-1 shadow transition">
           <i class="fa-solid fa-rotate text-[11px]"></i>
           <span>Sync</span>
-        </button>
-        <button onclick="syncSMS(true)" title="Scan All Existing SMS in Phone" class="bg-indigo-500 hover:bg-indigo-400 text-white text-xs px-2.5 py-1.5 rounded-lg flex items-center space-x-1 shadow transition">
-          <i class="fa-solid fa-clock-rotate-left text-[11px]"></i>
-          <span>Scan All SMS</span>
         </button>
       </div>
     </div>
@@ -627,6 +633,52 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <button onclick="saveNewStaff()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-xl shadow transition">
         Add Staff Member
       </button>
+    </div>
+  </div>
+
+  <!-- Modal: Backup & Restore Data -->
+  <div id="backup-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center pb-2 border-b">
+        <div>
+          <h2 class="text-base font-bold text-slate-800">Backup & Restore</h2>
+          <p class="text-xs text-slate-500">Save or transfer your financial records</p>
+        </div>
+        <button onclick="closeBackupModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <!-- Export Card -->
+      <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+        <div class="flex items-center space-x-2 text-xs font-bold text-slate-700">
+          <i class="fa-solid fa-file-arrow-down text-indigo-600"></i>
+          <span>Download Backup (JSON)</span>
+        </div>
+        <p class="text-[11px] text-slate-500">Exports all transactions, milk deliveries, staff dues, and budgets into a file on your device.</p>
+        <button onclick="downloadBackup()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold py-2 rounded-xl transition shadow flex items-center justify-center space-x-1.5">
+          <i class="fa-solid fa-download"></i>
+          <span>Download Backup File</span>
+        </button>
+      </div>
+
+      <!-- Import Card -->
+      <div class="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+        <div class="flex items-center space-x-2 text-xs font-bold text-emerald-800">
+          <i class="fa-solid fa-file-arrow-up text-emerald-600"></i>
+          <span>Restore from Backup File</span>
+        </div>
+        <p class="text-[11px] text-slate-500">Upload a previously downloaded JSON backup file to restore your data safely without duplicate entries.</p>
+        <input type="file" id="backup-file-input" accept=".json" class="text-xs w-full text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700">
+        <button onclick="uploadBackup()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-xl transition shadow flex items-center justify-center space-x-1.5">
+          <i class="fa-solid fa-upload"></i>
+          <span>Restore Records</span>
+        </button>
+      </div>
+
+      <!-- PWA Install Tip -->
+      <div class="p-3 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start space-x-2">
+        <i class="fa-solid fa-mobile-screen text-amber-600 mt-0.5"></i>
+        <span><strong>Use as a Phone App:</strong> In mobile Chrome, tap the 3-dot menu and select <strong>"Add to Home screen"</strong> or <strong>"Install app"</strong> to launch this like a native app icon!</span>
+      </div>
     </div>
   </div>
 
@@ -1612,7 +1664,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     async function parseCustomSMS() {
       const text = document.getElementById('custom-sms-text').value.trim();
       if (!text) return;
-      const res = await fetch('/api/parse-sms', {
+      const isMulti = text.includes("\n\n") || (text.split("\n").filter(l => l.trim().length > 20).length > 1);
+      const endpoint = isMulti ? '/api/parse-bulk-sms' : '/api/parse-sms';
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({text})
@@ -1622,7 +1676,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       resultDiv.classList.remove('hidden');
       if (data.success) {
         resultDiv.className = "text-xs p-3 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200";
-        resultDiv.innerHTML = `<strong>Success!</strong> Auto-detected: ₹${data.parsed.amount} debited at ${data.parsed.merchant} (${data.parsed.category} via ${data.parsed.payment_mode}). Added to database!`;
+        if (isMulti) {
+          resultDiv.innerHTML = `<strong>Bulk Import Finished!</strong> Processed ${data.total_blocks} text blocks. Successfully extracted and recorded <strong>+${data.added}</strong> new transactions (${data.duplicates} duplicates skipped).`;
+        } else {
+          resultDiv.innerHTML = `<strong>Success!</strong> Auto-detected: ₹${data.parsed.amount} debited at ${data.parsed.merchant} (${data.parsed.category} via ${data.parsed.payment_mode}). Added to database!`;
+        }
         document.getElementById('custom-sms-text').value = '';
         loadStats();
         loadTransactions();
@@ -1630,6 +1688,65 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         resultDiv.className = "text-xs p-3 rounded-xl bg-rose-50 text-rose-800 border border-rose-200";
         resultDiv.innerHTML = `<strong>Failed:</strong> ${data.error || 'Could not parse transaction from this SMS text.'}`;
       }
+    }
+
+    // ----------------- BACKUP & RESTORE -----------------
+    function openBackupModal() {
+      document.getElementById('backup-modal').classList.remove('hidden');
+    }
+    function closeBackupModal() {
+      document.getElementById('backup-modal').classList.add('hidden');
+    }
+
+    async function downloadBackup() {
+      try {
+        const res = await fetch('/api/export-data');
+        const data = await res.json();
+        const str = JSON.stringify(data, null, 2);
+        const blob = new Blob([str], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `expense_tracker_backup_${dateStr}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast("Backup file downloaded successfully!");
+      } catch (e) {
+        alert("Backup download failed: " + e.message);
+      }
+    }
+
+    async function uploadBackup() {
+      const fileInput = document.getElementById('backup-file-input');
+      if (!fileInput.files || !fileInput.files[0]) {
+        alert("Please choose a .json backup file first!");
+        return;
+      }
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const json = JSON.parse(e.target.result);
+          const res = await fetch('/api/import-data', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(json)
+          });
+          const result = await res.json();
+          closeBackupModal();
+          showToast(`Restored: ${result.counts.transactions} transactions, ${result.counts.milk_deliveries} milk logs!`);
+          loadStats();
+          loadTransactions();
+          loadMilkData();
+          loadStaffData();
+        } catch (err) {
+          alert("Invalid backup file: " + err.message);
+        }
+      };
+      reader.readAsText(file);
     }
 
     // ----------------- GENERAL EXPENSE & CUSTOM CATEGORIES -----------------
@@ -1837,6 +1954,25 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._send_json(db.get_monthly_history_breakdown(limit_months=24))
         elif path == "/api/available-months":
             self._send_json(db.get_all_available_months())
+        elif path == "/manifest.json":
+            manifest = {
+                "name": "Smart Expense & Household Tracker",
+                "short_name": "Expenses",
+                "start_url": "/",
+                "display": "standalone",
+                "background_color": "#ffffff",
+                "theme_color": "#4f46e5",
+                "icons": [
+                    {
+                        "src": "https://cdn-icons-png.flaticon.com/512/2454/2454282.png",
+                        "sizes": "512x512",
+                        "type": "image/png"
+                    }
+                ]
+            }
+            self._send_json(manifest)
+        elif path == "/api/export-data":
+            self._send_json(db.export_all_data())
         elif path == "/api/transactions":
             q = query.get('q', [''])[0]
             cat = query.get('category', ['All'])[0]
@@ -1889,6 +2025,48 @@ class RequestHandler(BaseHTTPRequestHandler):
                     self._send_json({"success": False, "error": "This transaction already exists in the database (duplicate)."})
             else:
                 self._send_json({"success": False, "error": "Could not extract valid transaction amount or debit pattern from SMS."})
+        elif path == "/api/parse-bulk-sms":
+            raw_text = data.get("text", "")
+            if "\n\n" in raw_text:
+                blocks = [b.strip() for b in raw_text.split("\n\n") if b.strip()]
+            else:
+                blocks = [l.strip() for l in raw_text.split("\n") if l.strip()]
+            
+            added = 0
+            duplicates = 0
+            failed = 0
+            for block in blocks:
+                if len(block) < 10:
+                    continue
+                parsed = SMSParser.parse(block, sender="Bulk Paste")
+                if parsed:
+                    inserted_id = db.add_transaction(**parsed)
+                    if inserted_id:
+                        added += 1
+                    else:
+                        duplicates += 1
+                else:
+                    failed += 1
+            
+            if added > 0 or duplicates > 0:
+                self._send_json({
+                    "success": True,
+                    "total_blocks": len(blocks),
+                    "added": added,
+                    "duplicates": duplicates,
+                    "failed": failed
+                })
+            else:
+                self._send_json({
+                    "success": False,
+                    "error": "Could not detect any valid debit/expense transaction alerts in the pasted text."
+                })
+        elif path == "/api/import-data":
+            try:
+                counts = db.import_all_data(data)
+                self._send_json({"success": True, "counts": counts})
+            except Exception as e:
+                self._send_json({"success": False, "error": str(e)}, status=400)
         elif path == "/api/add-transaction":
             merchant = data.get("merchant", "Cash Expense").strip() or "Cash Expense"
             category = data.get("category", "Others").strip() or "Others"
@@ -2025,9 +2203,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
 
-def run_server(port=5000):
+def run_server(port=None):
+    if port is None:
+        port = int(os.environ.get("PORT", 5000))
     server = HTTPServer(('0.0.0.0', port), RequestHandler)
-    print(f"\n[+] Smart Expense & Household Tracker running at: http://localhost:{port}")
+    print(f"\n[+] Smart Expense & Household Tracker running on port: {port}")
+    print(f"[+] Local link: http://localhost:{port}")
     print(f"[+] To view on your phone on the same Wi-Fi, open: http://<YOUR_COMPUTER_IP>:{port}\n")
     try:
         server.serve_forever()

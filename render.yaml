@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: expensetracker
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements-web.txt"
+    startCommand: "python web_preview.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0

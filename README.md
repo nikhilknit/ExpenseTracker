@@ -88,17 +88,29 @@ ExpenseTracker/
 
 ## 🚀 How to Run & Test
 
-### Option 1: Instant Web & Mobile Preview (No Heavy Setup Needed)
+### Option 1: Mobile Web App (PWA) & Free Cloud Hosting (Recommended)
 
-You can immediately test the database, SMS parser, and add transactions on your computer or phone browser:
+The app comes with a zero-dependency, responsive Web App and Progressive Web App (PWA) that you can access from your phone or laptop browser and even **install to your home screen** as an app:
 
+#### A. Free Cloud Hosting on Render.com (100% Free Forever):
+1. Create a free account at [Render.com](https://render.com).
+2. Click **New +** -> **Web Service**.
+3. Connect your GitHub repository (`ExpenseTracker`).
+4. Set:
+   - **Environment**: `Python 3`
+   - **Build Command**: `pip install -r requirements-web.txt` (Instant build)
+   - **Start Command**: `python web_preview.py`
+   - **Instance Type**: `Free`
+5. Click **Create Web Service**. Within 60 seconds, you get a live public HTTPS link (e.g. `https://my-expenses.onrender.com`).
+6. **Install on Phone**: Open the link on your phone in Chrome or Safari, tap the three dots (or Share button) -> tap **"Add to Home screen"** / **"Install app"**. It will appear on your phone like a native app!
+7. **Backup & Restore**: Use the **Backup** button in the top bar to download a 1-click `.json` backup of your data anytime, or restore it onto another device.
+
+#### B. Run Locally or on Home Wi-Fi:
 ```bash
 python web_preview.py
 ```
-
 - Open **`http://localhost:5000`** on your computer.
 - To open it on your phone: connect your phone to the same Wi-Fi network and open `http://<YOUR_PC_IP>:5000`.
-- You can test pasting your bank SMS messages, logging cash payments, editing budgets, and viewing analytics.
 
 ---
 
